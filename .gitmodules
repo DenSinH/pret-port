@@ -1,0 +1,6 @@
+[submodule "decomp/pokeruby"]
+	path = decomp/pokeruby
+	url = https://github.com/pret/pokeruby.git
+[submodule "tools/pymakeparser"]
+	path = tools/pymakeparser
+	url = https://github.com/DenSinH/pymakeparser
