@@ -24,6 +24,8 @@ file(GLOB_RECURSE DECOMP_ASM_DATA_FILES
         RELATIVE ${DECOMP_ASM_DATA_RELATIVE_DIR}
         ${DECOMP_ASM_DATA_RELATIVE_DIR}/*.s)
 
+file(GLOB_RECURSE DECOMP_ASM_INC_FILES "${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/*.inc")
+
 # find tools
 add_subdirectory(pret-tools)
 
@@ -68,9 +70,12 @@ if(MSVC)
     # add_definitions(/FI"foo.h")
     message(ERROR "Test this for MSVC")
 else()
-    set(PREPROCESSING_PREPEND_STRING "-include \"${PROJECT_SOURCE_DIR}/generic/prepend.h\" -include \"${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/prepend.h\"")
+    if (EXISTS "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/prepend.h")
+        set(PREPROCESSING_PREPEND_STRING "-include \"${PROJECT_SOURCE_DIR}/generic/prepend.h\" -include \"${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/prepend.h\"")
+    else()
+        set(PREPROCESSING_PREPEND_STRING "-include \"${PROJECT_SOURCE_DIR}/generic/prepend.h\"")
+    endif()
 endif()
-
 # process graphics files
 # the conversions should all be specified in .mk files in the directories
 
@@ -79,14 +84,21 @@ set(GFXFINDALL "${PROJECT_SOURCE_DIR}/tools/gfxfindall.py")
 list(TRANSFORM DECOMP_SOURCE_FILES
      PREPEND "${DECOMP_SOURCE_RELATIVE_DIR}/"
      OUTPUT_VARIABLE ABSOLUTE_DECOMP_SOURCE_FILES)
+list(TRANSFORM DECOMP_ASM_DATA_FILES
+     PREPEND "${DECOMP_ASM_DATA_RELATIVE_DIR}/"
+     OUTPUT_VARIABLE ABSOLUTE_DECOMP_ASM_DATA_FILES)
 
 set(SOURCE_LIST_FILE "${CMAKE_CURRENT_BINARY_DIR}/temp/source_list.txt")
 string (REPLACE ";" "\n" ABSOLUTE_DECOMP_SOURCE_FILES_LIST "${ABSOLUTE_DECOMP_SOURCE_FILES}")
-file(WRITE "${SOURCE_LIST_FILE}" ${ABSOLUTE_DECOMP_SOURCE_FILES_LIST})
+string (REPLACE ";" "\n" ABSOLUTE_DECOMP_ASM_DATA_FILES_LIST "${ABSOLUTE_DECOMP_ASM_DATA_FILES}")
+string (REPLACE ";" "\n" DECOMP_ASM_INC_FILES_LIST "${DECOMP_ASM_INC_FILES}")
+file(WRITE "${SOURCE_LIST_FILE}.tmp" "${ABSOLUTE_DECOMP_SOURCE_FILES_LIST}\n${ABSOLUTE_DECOMP_ASM_DATA_FILES_LIST}\n${DECOMP_ASM_INC_FILES_LIST}")
+file(COPY_FILE "${SOURCE_LIST_FILE}.tmp" "${SOURCE_LIST_FILE}" ONLY_IF_DIFFERENT)
 
 set(HEADER_LIST_FILE "${CMAKE_CURRENT_BINARY_DIR}/temp/header_list.txt")
 string (REPLACE ";" "\n" DECOMP_HEADER_FILES_LIST "${DECOMP_HEADER_FILES}")
-file(WRITE "${HEADER_LIST_FILE}" ${DECOMP_HEADER_FILES_LIST})
+file(WRITE "${HEADER_LIST_FILE}.tmp" ${DECOMP_HEADER_FILES_LIST})
+file(COPY_FILE "${HEADER_LIST_FILE}.tmp" "${HEADER_LIST_FILE}" ONLY_IF_DIFFERENT)
 
 set(INCBIN_LIST_FILE "${CMAKE_CURRENT_BINARY_DIR}/temp/incbin_list.txt")
 
@@ -98,6 +110,9 @@ add_custom_command(
         VERBATIM
 )
 
+add_custom_target(RUN_GFXFINDALL
+        DEPENDS "${INCBIN_LIST_FILE}")
+
 file(GLOB MK_FILES
 #        ${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/Makefile
         ${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/*.mk)
@@ -105,17 +120,27 @@ set(MKFILE_LIST_FILE "${CMAKE_CURRENT_BINARY_DIR}/temp/mkfile_list.txt")
 
 # write to file so the argument string will not be too long
 string (REPLACE ";" "\n" MK_FILES_LIST "${MK_FILES}")
-file(WRITE "${MKFILE_LIST_FILE}" ${MK_FILES_LIST})
+file(WRITE "${MKFILE_LIST_FILE}.tmp" ${MK_FILES_LIST})
+file(COPY_FILE "${MKFILE_LIST_FILE}.tmp" "${MKFILE_LIST_FILE}" ONLY_IF_DIFFERENT)
 
-set(GFXFIXALL "${PROJECT_SOURCE_DIR}/tools/gfxfixall.py")
-add_custom_target(
-        RUN_GFXFIXALL
-        COMMAND python ${GFXFIXALL} $<TARGET_FILE:GBAGFX> $<TARGET_FILE:RSFONT> $<TARGET_FILE:JSONPROC> $<TARGET_FILE:MAPJSON>
+set(INCFIXALL "${PROJECT_SOURCE_DIR}/tools/incfixall.py")
+set(INCFIXALL_OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/incfixall.out")
+#message(STATUS "INCFIXALL command \
+#    python ${INCFIXALL} $<TARGET_FILE:GBAGFX> $<TARGET_FILE:RSFONT> $<TARGET_FILE:JSONPROC> $<TARGET_FILE:MAPJSON> \
+#    \"${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/\" \"${CMAKE_CURRENT_BINARY_DIR}\" \"${MKFILE_LIST_FILE}\" \"${INCBIN_LIST_FILE}\"")
+
+add_custom_command(
+        OUTPUT "${INCFIXALL_OUTPUT_FILE}"
+        COMMAND python ${INCFIXALL} $<TARGET_FILE:GBAGFX> $<TARGET_FILE:RSFONT> $<TARGET_FILE:JSONPROC> $<TARGET_FILE:MAPJSON>
                 "${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/" "${CMAKE_CURRENT_BINARY_DIR}" "${MKFILE_LIST_FILE}" "${INCBIN_LIST_FILE}"
-        DEPENDS ${GFXFIXALL} ${MK_FILES} GBAGFX RSFONT JSONPROC MAPJSON "${INCBIN_LIST_FILE}"
-        COMMENT "Converting all graphics files"
+                > "${INCFIXALL_OUTPUT_FILE}"
+        DEPENDS ${INCFIXALL} GBAGFX RSFONT JSONPROC MAPJSON RUN_GFXFINDALL "${MKFILE_LIST_FILE}" ${INCBIN_LIST_FILE}
+        COMMENT "Processing all include files"
         VERBATIM
 )
+
+add_custom_target(RUN_INCFIXALL
+        DEPENDS "${INCFIXALL_OUTPUT_FILE}")
 
 # preprocess source files
 get_target_property(DECOMP_COMPILE_OPTIONS ${PROJECT_NAME} COMPILE_OPTIONS)
@@ -132,24 +157,22 @@ separate_arguments(PREPROC_INCLUDE_STRING UNIX_COMMAND ${PREPROC_INCLUDE_STRING}
 foreach(def ${DECOMP_COMPILE_DEFINITIONS})
     string(APPEND PREPROC_COMPILE_DEFINITION_STRING "-D${def} ")
 endforeach()
-separate_arguments(PREPROC_COMPILE_DEFINITION_STRING UNIX_COMMAND ${PREPROC_COMPILE_DEFINITION_STRING})
+separate_arguments(PREPROC_COMPILE_DEFINITION_STRING_SEPARATED UNIX_COMMAND ${PREPROC_COMPILE_DEFINITION_STRING})
 
 foreach(source_file ${DECOMP_SOURCE_FILES})
     set(output_file "${CMAKE_CURRENT_BINARY_DIR}/src-preproc/${source_file}.ii")
     set(temp_file "${CMAKE_CURRENT_BINARY_DIR}/src-preproc/${source_file}.c")
-#    message(STATUS "${source_file} -> ${output_file}")
     add_custom_command(
             OUTPUT "${output_file}"
             COMMAND "${CMAKE_C_COMPILER}" ${CMAKE_C_FLAGS} ${DECOMP_COMPILE_OPTIONS}
                     -o "${temp_file}"
                     -E "${DECOMP_SOURCE_RELATIVE_DIR}/${source_file}"
-                    ${PREPROC_INCLUDE_STRING} ${PREPROC_COMPILE_DEFINITION_STRING}
+                    ${PREPROC_INCLUDE_STRING} ${PREPROC_COMPILE_DEFINITION_STRING_SEPARATED}
                     ${PREPROCESSING_PREPEND_STRING}
             COMMAND PREPROC "${temp_file}" "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/charmap.txt" > "${output_file}"
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-            DEPENDS PREPROC "${DECOMP_SOURCE_RELATIVE_DIR}/${source_file}" RUN_GFXFIXALL
-                    ${PROJECT_SOURCE_DIR}/generic/prepend.h
-                    ${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/prepend.h
+            DEPENDS PREPROC "${DECOMP_SOURCE_RELATIVE_DIR}/${source_file}" RUN_INCFIXALL
+            # todo: DEPENDS on inc files
             COMMENT "Preprocessing ${source_file} to ${output_file}"
     )
 
@@ -157,26 +180,46 @@ foreach(source_file ${DECOMP_SOURCE_FILES})
     set_source_files_properties("${output_file}" PROPERTIES LANGUAGE C)
 endforeach()
 
+set(ASM_NONGENERIC_PREPEND_FILE "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/prepend_asm.h")
+if(EXISTS ${ASM_NONGENERIC_PREPEND_FILE})
+    message(STATUS "Nongeneric assembly prepend file found: ${ASM_NONGENERIC_PREPEND_FILE}")
+    set(ASM_PREPROCESSING_PREPEND_STRING "-include \"${ASM_NONGENERIC_PREPEND_FILE}\"")
+else()
+    set(ASM_PREPROCESSING_PREPEND_STRING "")
+    set(ASM_NONGENERIC_PREPEND_FILE "")
+endif()
+
 foreach(source_file ${DECOMP_ASM_DATA_FILES})
-    set(output_file "${CMAKE_CURRENT_BINARY_DIR}/asm-data-preproc/${source_file}.si")
-#    set(temp_file "${CMAKE_CURRENT_BINARY_DIR}/asm-data-preproc/${source_file}.s")
+    set(output_file "${CMAKE_CURRENT_BINARY_DIR}/asm-data-preproc/${source_file}.tmp.s")
+    set(temp_file "${CMAKE_CURRENT_BINARY_DIR}/asm-data-preproc/${source_file}.c")
+
     add_custom_command(
             OUTPUT "${output_file}"
-#            COMMAND "${CMAKE_C_COMPILER}" ${CMAKE_C_FLAGS} ${DECOMP_COMPILE_OPTIONS}
-#                    -o "${temp_file}"
-#                    -E "${DECOMP_ASM_DATA_RELATIVE_DIR}/${source_file}"
-#                    ${PREPROC_INCLUDE_STRING} ${PREPROC_COMPILE_DEFINITION_STRING}
-#                    ${PREPROCESSING_PREPEND_STRING}
-            COMMAND PREPROC "${DECOMP_ASM_DATA_RELATIVE_DIR}/${source_file}" "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/charmap.txt" > "${output_file}"
+            COMMAND PREPROC "${DECOMP_ASM_DATA_RELATIVE_DIR}/${source_file}" "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/charmap.txt" > "${temp_file}"
+            COMMAND "${CMAKE_C_COMPILER}"
+                    -o "${output_file}"
+                    -E "${temp_file}"
+                    ${PREPROC_INCLUDE_STRING}
+                    ${ASM_PREPROCESSING_PREPEND_STRING}
+                    # todo: decomp-specific
+                    -DDEBUG=0
+                    -DREVISION=1
+                    -DNO_MUSIC=0
+                    -Wno-unicode
             WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/decomp/${DECOMP}"
             DEPENDS PREPROC "${DECOMP_ASM_DATA_RELATIVE_DIR}/${source_file}"
-                    ${PROJECT_SOURCE_DIR}/generic/prepend.h
-                    ${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/prepend.h
+                    ${ASM_NONGENERIC_PREPEND_FILE}
+                    ${DECOMP_ASM_INC_FILES}
+                    RUN_INCFIXALL
             COMMENT "Preprocessing ${source_file} to ${output_file}"
     )
 
     target_sources(${PROJECT_NAME} PRIVATE "${output_file}")
-    set_source_files_properties("${output_file}" PROPERTIES LANGUAGE ASM)
+    set_source_files_properties("${output_file}" PROPERTIES
+            LANGUAGE ASM
+            INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/decomp/${DECOMP}")
 endforeach()
+
+#target_compile_options(${PROJECT_NAME} PRIVATE "-L")
 
 target_link_libraries(${PROJECT_NAME} ${DECOMP})

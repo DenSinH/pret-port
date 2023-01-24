@@ -164,6 +164,10 @@ bool AsmFile::CheckForDirective(std::string name)
 Directive AsmFile::GetDirective()
 {
     SkipWhitespace();
+    // all directives start with . anyway
+    if (m_buffer[m_pos] != '.') {
+        return Directive::Unknown;
+    }
 
     if (CheckForDirective(".include"))
         return Directive::Include;
@@ -171,6 +175,8 @@ Directive AsmFile::GetDirective()
         return Directive::String;
     else if (CheckForDirective(".braille"))
         return Directive::Braille;
+    else if (CheckForDirective(".section"))
+        return Directive::Section;
     else
         return Directive::Unknown;
 }
@@ -367,6 +373,57 @@ int AsmFile::ReadBraille(unsigned char* s)
     ExpectEmptyRestOfLine();
 
     return length;
+}
+
+// read a .section command
+// see https://ftp.gnu.org/old-gnu/Manuals/gas-2.9.1/html_node/as_117.html for gcc syntax
+// see https://llvm.org/docs/Extensions.html#section-directive for clang syntax
+std::vector<std::string> AsmFile::ReadSection() {
+    SkipWhitespace();
+
+    std::string name{};
+    while (m_buffer[m_pos] != ' ' && m_buffer[m_pos] != '\t' && m_buffer[m_pos] != '\n' && m_buffer[m_pos] != 0 && m_buffer[m_pos] != ',') {
+        name += m_buffer[m_pos++];
+    }
+    SkipWhitespace();
+
+    // flags argument is optional
+    if (m_buffer[m_pos] != ',') {
+        ExpectEmptyRestOfLine();
+        return {name};
+    }
+    m_pos++;  // eat ,
+    SkipWhitespace();
+
+    std::string flags{};
+    while (m_buffer[m_pos] != ' ' && m_buffer[m_pos] != '\t' && m_buffer[m_pos] != '\n' && m_buffer[m_pos] != 0 && m_buffer[m_pos] != ',') {
+        flags += m_buffer[m_pos++];
+    }
+    SkipWhitespace();
+
+    // @type argument is optional
+    if (m_buffer[m_pos] != ',') {
+        ExpectEmptyRestOfLine();
+        return {name, flags};
+    }
+    m_pos++;  // eat ,
+    SkipWhitespace();
+
+    std::string type{};
+    while (m_buffer[m_pos] != ' ' && m_buffer[m_pos] != '\t' && m_buffer[m_pos] != '\n' && m_buffer[m_pos] != 0) {
+        type += m_buffer[m_pos++];
+    }
+    ExpectEmptyRestOfLine();
+
+    // only check for progbits
+    if (type == "@progbits"
+      || type == "%progbits") {
+        // discard type, this is not supported on clang
+        return {name, flags};
+    }
+    else {
+        RaiseError(("Unknown section type: " + name).c_str());
+    }
 }
 
 // If we're at a comma, consumes it.

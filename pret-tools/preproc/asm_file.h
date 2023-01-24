@@ -31,6 +31,7 @@ enum class Directive
     Include,
     String,
     Braille,
+    Section,
     Unknown
 };
 
@@ -46,6 +47,7 @@ public:
     std::string ReadPath();
     int ReadString(unsigned char* s);
     int ReadBraille(unsigned char* s);
+    std::vector<std::string> ReadSection();
     bool IsAtEnd();
     void OutputLine();
     void OutputLocation();

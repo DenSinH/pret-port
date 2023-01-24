@@ -83,6 +83,15 @@ void PreprocAsmFile(std::string filename)
             PrintAsmBytes(s, length);
             break;
         }
+        case Directive::Section:
+        {
+            auto args = stack.top().ReadSection();
+            std::printf(".section %s", args[0].c_str());
+            if (args.size() > 1) {
+                std::printf(", %s", args[1].c_str());
+            }
+            std::putchar('\n');
+        }
         case Directive::Unknown:
         {
             std::string globalLabel = stack.top().GetGlobalLabel();

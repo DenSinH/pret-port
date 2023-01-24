@@ -24,7 +24,8 @@ env["MAPJSON"] = "MAPJSON"
 # missing variables in makefile
 env["DATA_SRC_SUBDIR"] = "src/data"
 
-GFXFILES = re.compile(r"^(.*)\.(1bpp|4bpp|8bpp|gbapal|lz|rl|bin)$")
+GFXFILES = re.compile(r"^(.*)\.(1bpp|4bpp|8bpp|gbapal|lz|rl)$")
+IGNORE_TARGETS = re.compile(r"^(.*)\.(o)$")
 
 # todo: non-generic?
 EXT_SOURCE = {
@@ -103,17 +104,16 @@ def run_gbagfx(target, variables):
     out_file = get_out_file(target)
 
     # files might have to be recursively generated
-    if re.match(GFXFILES, src):
-        if os.path.exists(os.path.join(base_dir, src)):
-            # source file can just be read from base_dir
-            pass
-        elif os.path.exists(os.path.join(dest_dir, src)):
-            # have to read source file from dest_dir (binary dir)
-            src = os.path.join(dest_dir, src)
-        else:
-            # no variables given for src, assume empty variables
-            run_gbagfx(src, {})
-            src = os.path.join(dest_dir, src)
+    if os.path.exists(os.path.join(base_dir, src)):
+        # source file can just be read from base_dir
+        pass
+    elif os.path.exists(os.path.join(dest_dir, src)):
+        # have to read source file from dest_dir (binary dir)
+        src = os.path.join(dest_dir, src)
+    elif re.match(GFXFILES, src):
+        # no variables given for src, assume empty variables
+        run_gbagfx(src, {})
+        src = os.path.join(dest_dir, src)
 
     cmd = [gbagfx, src, out_file]
     if GFX_OPTS:
@@ -130,8 +130,11 @@ def fix_rules_target(target):
     if len(target.rules) > 1:
         raise Exception("Expected only one rule for graphics targets")
     rule = target.rules[0]
-    if len(rule.commands) != 1:
-        raise Exception(f"Expected 1 command for graphics target rules (got {len(rule.commands)}")
+    if len(rule.commands) == 0:
+        # simply a dependency, no rule
+        return
+    if len(rule.commands) > 1:
+        raise Exception(f"Expected 1 command for target {target.name} rules (got {len(rule.commands)})")
 
     command = shlex.split(rule.commands[0])
 
@@ -188,6 +191,9 @@ def fix_rules_target(target):
 
 def fix_makefile_targets(fpath):
     print(f"Processing targets from {fpath}")
+
+    # set cwd to decomp base dir for pathsubst wildcards to work
+    os.chdir(base_dir)
     mkfile = Makefile(fpath, env=env)
 
     def _fix_rules_target(target):
@@ -198,7 +204,6 @@ def fix_makefile_targets(fpath):
         run_gbagfx(target.name, target.variables)
         return target
 
-
     targets_fixed = set()
     with fut.ThreadPoolExecutor(max_workers=4) as pool:
 
@@ -206,6 +211,9 @@ def fix_makefile_targets(fpath):
             futures = []
             for target in layer:
                 print(f"Makefile target {target.name}")
+
+                if re.match(IGNORE_TARGETS, target.name):
+                    continue
 
                 if target.rules:
                     futures.append(pool.submit(_fix_rules_target, target))
@@ -216,8 +224,7 @@ def fix_makefile_targets(fpath):
                 #     print(f"Target {target.name} has already been processed")
                 else:
                     # only parse gfx file types without rules
-                    match = re.match(GFXFILES, target.name)
-                    if not match:
+                    if not re.match(GFXFILES, target.name):
                         continue
                     futures.append(pool.submit(_fix_norules_target, target))
 

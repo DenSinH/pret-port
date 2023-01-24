@@ -315,12 +315,31 @@ string generate_connections_text(Json groups_data) {
     if (connections_include_order.size() > 0)
         sort(map_names.begin(), map_names.end(), [connections_include_order](const Json &a, const Json &b) {
             auto iter_a = find(connections_include_order.begin(), connections_include_order.end(), a);
-            if (iter_a == connections_include_order.end())
-                iter_a = connections_include_order.begin() + numeric_limits<int>::max();
             auto iter_b = find(connections_include_order.begin(), connections_include_order.end(), b);
-            if (iter_b == connections_include_order.end())
-                iter_b = connections_include_order.begin() + numeric_limits<int>::max();
-            return iter_a < iter_b;
+
+//            if (iter_a == connections_include_order.end())
+//                iter_a = connections_include_order.begin() + numeric_limits<int>::max();
+//            auto iter_b = find(connections_include_order.begin(), connections_include_order.end(), b);
+//            if (iter_b == connections_include_order.end())
+//                iter_b = connections_include_order.begin() + numeric_limits<int>::max();
+
+            if (iter_a == connections_include_order.end()) {
+                if (iter_b == connections_include_order.end()) {
+                    return iter_a < iter_b;  // this will also be false
+                }
+                else {
+                  return false;  // both are the old value + INT_MAX
+                }
+            }
+            else {
+                if (iter_b == connections_include_order.end()) {
+                    return true;  // iter_b will have INT_MAX added to it
+                }
+                else {
+                  return iter_a < iter_b;
+                }
+            }
+//            return iter_a < iter_b;
         });
 
     ostringstream text;
