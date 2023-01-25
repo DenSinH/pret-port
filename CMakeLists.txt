@@ -24,6 +24,11 @@ file(GLOB_RECURSE DECOMP_ASM_DATA_FILES
         RELATIVE ${DECOMP_ASM_DATA_RELATIVE_DIR}
         ${DECOMP_ASM_DATA_RELATIVE_DIR}/*.s)
 
+set(DECOMP_ASM_SOUND_RELATIVE_DIR "${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/sound")
+file(GLOB_RECURSE DECOMP_ASM_SOUND_FILES
+        RELATIVE ${DECOMP_ASM_SOUND_RELATIVE_DIR}
+        ${DECOMP_ASM_SOUND_RELATIVE_DIR}/*.s)
+
 file(GLOB_RECURSE DECOMP_ASM_INC_FILES "${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/*.inc")
 
 # find tools
@@ -33,6 +38,7 @@ add_subdirectory(pret-tools)
 add_executable(${PROJECT_NAME}
         ${DECOMP_HEADER_FILES}
         ${PROJECT_SOURCE_DIR}/generic/libgba.c
+        ${PROJECT_SOURCE_DIR}/generic/m4a_internal.c
 )
 
 # add decomp library for decomp-specific missing symbols
@@ -113,28 +119,31 @@ add_custom_command(
 add_custom_target(RUN_GFXFINDALL
         DEPENDS "${INCBIN_LIST_FILE}")
 
-file(GLOB MK_FILES
-#        ${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/Makefile
-        ${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/*.mk)
-set(MKFILE_LIST_FILE "${CMAKE_CURRENT_BINARY_DIR}/temp/mkfile_list.txt")
+set(MK_FILE "${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/Makefile")
+#file(GLOB MK_FILES
+#        ${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/Makefile)
+##        ${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/*.mk)
+#set(MK_FILE_LIST_FILE "${CMAKE_CURRENT_BINARY_DIR}/temp/mkfile_list.txt")
 
 # write to file so the argument string will not be too long
-string (REPLACE ";" "\n" MK_FILES_LIST "${MK_FILES}")
-file(WRITE "${MKFILE_LIST_FILE}.tmp" ${MK_FILES_LIST})
-file(COPY_FILE "${MKFILE_LIST_FILE}.tmp" "${MKFILE_LIST_FILE}" ONLY_IF_DIFFERENT)
+#string (REPLACE ";" "\n" MK_FILES_LIST "${MK_FILES}")
+#file(WRITE "${MK_FILE_LIST_FILE}.tmp" ${MK_FILES_LIST})
+#file(COPY_FILE "${MK_FILE_LIST_FILE}.tmp" "${MK_FILE_LIST_FILE}" ONLY_IF_DIFFERENT)
 
 set(INCFIXALL "${PROJECT_SOURCE_DIR}/tools/incfixall.py")
 set(INCFIXALL_OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/incfixall.out")
 #message(STATUS "INCFIXALL command \
 #    python ${INCFIXALL} $<TARGET_FILE:GBAGFX> $<TARGET_FILE:RSFONT> $<TARGET_FILE:JSONPROC> $<TARGET_FILE:MAPJSON> \
-#    \"${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/\" \"${CMAKE_CURRENT_BINARY_DIR}\" \"${MKFILE_LIST_FILE}\" \"${INCBIN_LIST_FILE}\"")
+#    \"${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/\" \"${CMAKE_CURRENT_BINARY_DIR}\" \"${MK_FILE_LIST_FILE}\" \"${INCBIN_LIST_FILE}\"")
 
 add_custom_command(
         OUTPUT "${INCFIXALL_OUTPUT_FILE}"
         COMMAND python ${INCFIXALL} $<TARGET_FILE:GBAGFX> $<TARGET_FILE:RSFONT> $<TARGET_FILE:JSONPROC> $<TARGET_FILE:MAPJSON>
-                "${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/" "${CMAKE_CURRENT_BINARY_DIR}" "${MKFILE_LIST_FILE}" "${INCBIN_LIST_FILE}"
+                $<TARGET_FILE:AIF2PCM> $<TARGET_FILE:MID2AGB>
+                "${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/" "${CMAKE_CURRENT_BINARY_DIR}" "${MK_FILE}" "${INCBIN_LIST_FILE}"
                 > "${INCFIXALL_OUTPUT_FILE}"
-        DEPENDS ${INCFIXALL} GBAGFX RSFONT JSONPROC MAPJSON RUN_GFXFINDALL "${MKFILE_LIST_FILE}" ${INCBIN_LIST_FILE}
+        DEPENDS ${INCFIXALL} GBAGFX RSFONT JSONPROC MAPJSON AIF2PCM MID2AGB
+                RUN_GFXFINDALL "${MK_FILE}" ${INCBIN_LIST_FILE}
         COMMENT "Processing all include files"
         VERBATIM
 )
@@ -208,6 +217,39 @@ foreach(source_file ${DECOMP_ASM_DATA_FILES})
                     -Wno-unicode
             WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/decomp/${DECOMP}"
             DEPENDS PREPROC "${DECOMP_ASM_DATA_RELATIVE_DIR}/${source_file}"
+                    ${ASM_NONGENERIC_PREPEND_FILE}
+                    ${DECOMP_ASM_INC_FILES}
+                    RUN_INCFIXALL
+            COMMENT "Preprocessing ${source_file} to ${output_file}"
+    )
+
+    target_sources(${PROJECT_NAME} PRIVATE "${output_file}")
+    set_source_files_properties("${output_file}" PROPERTIES
+            LANGUAGE ASM
+            INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/decomp/${DECOMP}")
+endforeach()
+
+foreach(source_file ${DECOMP_ASM_SOUND_FILES})
+    set(output_file "${CMAKE_CURRENT_BINARY_DIR}/asm-sound-preproc/${source_file}.tmp.s")
+    set(temp_file "${CMAKE_CURRENT_BINARY_DIR}/asm-sound-preproc/${source_file}.c")
+
+    add_custom_command(
+            OUTPUT "${output_file}"
+            COMMAND PREPROC "${DECOMP_ASM_SOUND_RELATIVE_DIR}/${source_file}" "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/charmap.txt" > "${temp_file}"
+            COMMAND "${CMAKE_C_COMPILER}"
+                    -o "${output_file}"
+                    -E "${temp_file}"
+                    ${PREPROC_INCLUDE_STRING}
+                    -I"${PROJECT_SOURCE_DIR}/decomp/${DECOMP}/sound"
+                    ${ASM_PREPROCESSING_PREPEND_STRING}
+                    # todo: decomp-specific
+                    -DDEBUG=0
+                    -DREVISION=1
+                    -DNO_MUSIC=0
+                    -Wno-unicode
+            # this is a hack to get .include "MPlayDef.s" to work in PREPROC
+            WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/decomp/${DECOMP}/include"
+            DEPENDS PREPROC "${DECOMP_ASM_SOUND_RELATIVE_DIR}/${source_file}"
                     ${ASM_NONGENERIC_PREPEND_FILE}
                     ${DECOMP_ASM_INC_FILES}
                     RUN_INCFIXALL

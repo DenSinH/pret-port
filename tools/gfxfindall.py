@@ -28,7 +28,6 @@ def search_file(fpath):
     else:
         return fpath, []
 
-
     return fpath, incbins_found
 
 

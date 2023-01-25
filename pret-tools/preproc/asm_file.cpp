@@ -177,6 +177,8 @@ Directive AsmFile::GetDirective()
         return Directive::Braille;
     else if (CheckForDirective(".section"))
         return Directive::Section;
+    else if (CheckForDirective(".word"))
+        return Directive::Word;
     else
         return Directive::Unknown;
 }
@@ -508,6 +510,34 @@ void AsmFile::OutputLine()
     {
         m_buffer[m_pos] = 0;
         puts(&m_buffer[m_lineStart]);
+        m_buffer[m_pos] = '\n';
+        m_pos++;
+        m_lineStart = m_pos;
+        m_lineNum++;
+    }
+}
+
+void AsmFile::OutputRestOfLine() {
+    const auto currentPos = m_pos;
+    while (m_buffer[m_pos] != '\n' && m_buffer[m_pos] != 0)
+        m_pos++;
+
+    if (m_buffer[m_pos] == 0)
+    {
+        if (m_pos >= m_size)
+        {
+            RaiseWarning("file doesn't end with newline");
+            puts(&m_buffer[m_lineStart]);
+        }
+        else
+        {
+            RaiseError("unexpected null character");
+        }
+    }
+    else
+    {
+        m_buffer[m_pos] = 0;
+        puts(&m_buffer[currentPos]);
         m_buffer[m_pos] = '\n';
         m_pos++;
         m_lineStart = m_pos;

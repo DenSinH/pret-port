@@ -44,5 +44,18 @@ file(GLOB MAPJSON_SOURCE_FILES
         mapjson/*.cpp)
 add_executable(MAPJSON
         ${MAPJSON_SOURCE_FILES})
-target_compile_options(MAPJSON PRIVATE -DNDEBUG -O3 -Wno-deprecated-declarations)
 set_target_properties(MAPJSON PROPERTIES LINKER_LANGUAGE CXX)
+
+# AIF2PCM
+file(GLOB AIF2PCM_SOURCE_FILES
+        aif2pcm/*.c)
+add_executable(AIF2PCM
+        ${AIF2PCM_SOURCE_FILES})
+set_target_properties(AIF2PCM PROPERTIES LINKER_LANGUAGE C)
+
+# MID2AGB
+file(GLOB MID2AGB_SOURCE_FILES
+        mid2agb/*.cpp)
+add_executable(MID2AGB
+        ${MID2AGB_SOURCE_FILES})
+set_target_properties(MID2AGB PROPERTIES LINKER_LANGUAGE CXX)

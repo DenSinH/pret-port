@@ -65,49 +65,55 @@ void PreprocAsmFile(std::string filename)
 
         switch (directive)
         {
-        case Directive::Include:
-            stack.push(AsmFile(stack.top().ReadPath()));
-            stack.top().OutputLocation();
-            break;
-        case Directive::String:
-        {
-            unsigned char s[kMaxStringLength];
-            int length = stack.top().ReadString(s);
-            PrintAsmBytes(s, length);
-            break;
-        }
-        case Directive::Braille:
-        {
-            unsigned char s[kMaxStringLength];
-            int length = stack.top().ReadBraille(s);
-            PrintAsmBytes(s, length);
-            break;
-        }
-        case Directive::Section:
-        {
-            auto args = stack.top().ReadSection();
-            std::printf(".section %s", args[0].c_str());
-            if (args.size() > 1) {
-                std::printf(", %s", args[1].c_str());
-            }
-            std::putchar('\n');
-        }
-        case Directive::Unknown:
-        {
-            std::string globalLabel = stack.top().GetGlobalLabel();
-
-            if (globalLabel.length() != 0)
+            case Directive::Include:
+                stack.push(AsmFile(stack.top().ReadPath()));
+                stack.top().OutputLocation();
+                break;
+            case Directive::String:
             {
-                const char *s = globalLabel.c_str();
-                std::printf("%s: ; .global %s\n", s, s);
+                unsigned char s[kMaxStringLength];
+                int length = stack.top().ReadString(s);
+                PrintAsmBytes(s, length);
+                break;
             }
-            else
+            case Directive::Braille:
             {
-                stack.top().OutputLine();
+                unsigned char s[kMaxStringLength];
+                int length = stack.top().ReadBraille(s);
+                PrintAsmBytes(s, length);
+                break;
             }
+            case Directive::Section:
+            {
+                auto args = stack.top().ReadSection();
+                std::printf(".section %s", args[0].c_str());
+                if (args.size() > 1) {
+                    std::printf(", %s", args[1].c_str());
+                }
+                std::putchar('\n');
+                break;
+            }
+            case Directive::Word:
+            {
+                std::printf(".4byte");
+                stack.top().OutputRestOfLine();
+                break;
+            }
+            case Directive::Unknown:
+            {
+                std::string globalLabel = stack.top().GetGlobalLabel();
 
-            break;
-        }
+                if (globalLabel.length() != 0)
+                {
+                    const char *s = globalLabel.c_str();
+                    std::printf("%s: ; .global %s\n", s, s);
+                }
+                else
+                {
+                    stack.top().OutputLine();
+                }
+                break;
+            }
         }
     }
 }

@@ -32,6 +32,7 @@ enum class Directive
     String,
     Braille,
     Section,
+    Word,
     Unknown
 };
 
@@ -50,6 +51,7 @@ public:
     std::vector<std::string> ReadSection();
     bool IsAtEnd();
     void OutputLine();
+    void OutputRestOfLine();
     void OutputLocation();
 
 private:
