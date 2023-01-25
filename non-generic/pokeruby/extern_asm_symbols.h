@@ -1392,56 +1392,56 @@
 #define sub_813F9E0 _sub_813F9E0
 #define sub_813F9B8 _sub_813F9B8
 #define sub_813FBB8 _sub_813FBB8
-#define sDMG_MULTIPLIER _sDMG_MULTIPLIER
-#define sMOVEEND_STATE _sMOVEEND_STATE
-#define cEFFECT_CHOOSER _cEFFECT_CHOOSER
+// #define sDMG_MULTIPLIER _sDMG_MULTIPLIER
+// #define sMOVEEND_STATE _sMOVEEND_STATE
+//#define cEFFECT_CHOOSER _cEFFECT_CHOOSER
 #define gUproarAwakeStringIds _gUproarAwakeStringIds
-#define cMULTISTRING_CHOOSER _cMULTISTRING_CHOOSER
+//#define cMULTISTRING_CHOOSER _cMULTISTRING_CHOOSER
 #define gLeechSeedDrainStringIds _gLeechSeedDrainStringIds
-#define sSTATCHANGER _sSTATCHANGER
-#define sANIM_ARG1 _sANIM_ARG1
+// #define sSTATCHANGER _sSTATCHANGER
+//#define sANIM_ARG1 _sANIM_ARG1
 #define gStatUpStringIds _gStatUpStringIds
 #define gStatDownStringIds _gStatDownStringIds
-#define sMULTIHIT_EFFECT _sMULTIHIT_EFFECT
-#define sMULTIHIT_STRING _sMULTIHIT_STRING
+// #define sMULTIHIT_EFFECT _sMULTIHIT_EFFECT
+// #define sMULTIHIT_STRING _sMULTIHIT_STRING
 #define gBattleTextBuff1 _gBattleTextBuff1
 #define gRestUsedStringIds _gRestUsedStringIds
 #define gKOFailedStringIds _gKOFailedStringIds
-#define sTWOTURN_STRINGID _sTWOTURN_STRINGID
-#define sANIM_TURN _sANIM_TURN
+// #define sTWOTURN_STRINGID _sTWOTURN_STRINGID
+// #define sANIM_TURN _sANIM_TURN
 #define gFirstTurnOfTwoStringIds _gFirstTurnOfTwoStringIds
 #define gMistUsedStringIds _gMistUsedStringIds
 #define gFocusEnergyUsedStringIds _gFocusEnergyUsedStringIds
 #define gTransformUsedStringIds _gTransformUsedStringIds
 #define gReflectLightScreenSafeguardStringIds _gReflectLightScreenSafeguardStringIds
 #define gSubsituteUsedStringIds _gSubsituteUsedStringIds
-#define sANIM_TARGETS_HIT _sANIM_TARGETS_HIT
+// #define sANIM_TARGETS_HIT _sANIM_TARGETS_HIT
 #define gLeechSeedStringIds _gLeechSeedStringIds
-#define sPAINSPLIT_HP _sPAINSPLIT_HP
+// #define sPAINSPLIT_HP _sPAINSPLIT_HP
 #define gPartyStatusHealStringIds _gPartyStatusHealStringIds
-#define sTRIPLE_KICK_POWER _sTRIPLE_KICK_POWER
+// #define sTRIPLE_KICK_POWER _sTRIPLE_KICK_POWER
 #define gProtectLikeUsedStringIds _gProtectLikeUsedStringIds
-#define sBANK _sBANK
+// #define sBANK _sBANK
 #define gMoveWeatherChangeStringIds _gMoveWeatherChangeStringIds
 #define gFutureMoveUsedStringIds _gFutureMoveUsedStringIds
 #define gStockpileUsedStringIds _gStockpileUsedStringIds
 #define gSwallowFailStringIds _gSwallowFailStringIds
-#define sFIELD_1B _sFIELD_1B
+//#define sFIELD_1B _sFIELD_1B
 #define gItemSwapStringIds _gItemSwapStringIds
-#define sBANK_WITH_ABILITY _sBANK_WITH_ABILITY
+// #define sBANK_WITH_ABILITY _sBANK_WITH_ABILITY
 #define gSportsUsedStringIds _gSportsUsedStringIds
-#define sGIVEEXP_STATE _sGIVEEXP_STATE
-#define sBATTLE_STYLE _sBATTLE_STYLE
+// #define sGIVEEXP_STATE _sGIVEEXP_STATE
+// #define sBATTLE_STYLE _sBATTLE_STYLE
 #define gTrainerBattleOpponent _gTrainerBattleOpponent
 #define gNoEscapeStringIds _gNoEscapeStringIds
-#define sLVLBOX_STATE _sLVLBOX_STATE
-#define sLEARNMOVE_STATE _sLEARNMOVE_STATE
+// #define sLVLBOX_STATE _sLVLBOX_STATE
+// #define sLEARNMOVE_STATE _sLEARNMOVE_STATE
 #define gRainContinuesStringIds _gRainContinuesStringIds
 #define gSandStormHailContinuesStringIds _gSandStormHailContinuesStringIds
 #define gSandStormHailDmgStringIds _gSandStormHailDmgStringIds
 #define gSandStormHailEndStringIds _gSandStormHailEndStringIds
 #define gWeatherContinuesStringIds _gWeatherContinuesStringIds
-#define sBIDE_DMG _sBIDE_DMG
+// #define sBIDE_DMG _sBIDE_DMG
 #define gWokeUpStringIds _gWokeUpStringIds
 #define gGotDefrostedStringIds _gGotDefrostedStringIds
 #define gUproarOverTurnStringIds _gUproarOverTurnStringIds
@@ -4515,3 +4515,23 @@
 #define BattleScript_SpikesOnTarget _BattleScript_SpikesOnTarget
 #define BattleScript_SpikesOnAttacker _BattleScript_SpikesOnAttacker
 #define BattleScript_SpikesOngBank1 _BattleScript_SpikesOngBank1
+#define gCurrentMove _gCurrentMove
+#define gHitMarker _gHitMarker
+#define gMoveResultFlags _gMoveResultFlags
+#define gChosenMove _gChosenMove
+#define gEffectBattler _gEffectBattler
+#define gBattlerTarget _gBattlerTarget
+#define gBattleMoveDamage _gBattleMoveDamage
+#define gDynamicBasePower _gDynamicBasePower
+#define gBattlerAttacker _gBattlerAttacker
+#define gBattlersCount _gBattlersCount
+#define gBattleWeather _gBattleWeather
+#define gBattleTypeFlags _gBattleTypeFlags
+#define gBattleCommunication _gBattleCommunication
+#define gBattleOutcome _gBattleOutcome
+#define gCritMultiplier _gCritMultiplier
+#define gHpDealt _gHpDealt
+#define gUnknown_02024D1F _gUnknown_02024D1F
+#define gBank1 _gBank1
+#define gBattlerByTurnOrder _gBattlerByTurnOrder
+#define gLastUsedItem _gLastUsedItem

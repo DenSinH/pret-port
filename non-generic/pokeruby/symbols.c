@@ -63,11 +63,18 @@ u8 gCurrentActionFuncId = 0;
 u8 gCurrentTurnActionNumber = 0;
 u8 gUnknown_02024BE5 = 0;
 u8 gCurrMovePos = 0;
+u8 gBank1 = 0;
 
 u16 gChosenMove = 0;
 u16 gPauseCounterBattle = 0;
 u16 gPaydayMoney = 0;
 u16 gRandomTurnNumber = 0;
+u16 gBattleMovePower = 0;
+u16 gExpShareExp = 0;
+u16 gMoveToLearn = 0;
+u16 gRandomMove = 0;
+
+vu16 GPIOPortDirection = 0;
 
 u32 gUnknown_020239FC = 0;
 u32 gHitMarker = 0;
@@ -82,6 +89,9 @@ u8 gActionForBanks[4] = {};
 u8 gActionsByTurnOrder[4] = {};
 u8 gTakenDmgByBattler[4] = {};
 u8 gUnknown_02024D1F[8] = {};
+u8 gSentPokesToOpponent[2] = {};
+u8 gTileBuffer[0x400] = {};
+u8 gUnknown_02039760[0xC00] = {};
 
 u8* gSelectionBattleScripts[4] = {};
 
@@ -99,4 +109,12 @@ u16 gLastResultingMoves[4] = {};
 u16 gLastHitByType[4] = {};
 u16 gChosenMovesByBanks[4] = {};
 
-/* asm file symbols */
+extern u32 IntrMain_Buffer[0x200];
+u32 IntrMain[2048];
+
+// in m4a_1.s
+u8 gUnknown_030007B8[0x770] = {};
+
+// other m4a stuff
+char gMaxLines[4] = {};
+u8 gNumMusicPlayers[4] = {};

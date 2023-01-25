@@ -34,12 +34,22 @@ file(GLOB_RECURSE DECOMP_ASM_INC_FILES "${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DI
 # find tools
 add_subdirectory(pret-tools)
 
+# todo: this is only for clang
+add_link_options("LINKER:/SAFESEH:NO")
+
 # create target
 add_executable(${PROJECT_NAME}
-        ${DECOMP_HEADER_FILES}
-        ${PROJECT_SOURCE_DIR}/generic/libgba.c
-        ${PROJECT_SOURCE_DIR}/generic/m4a_internal.c
-)
+        ${DECOMP_HEADER_FILES})
+
+# libgba target for missing stdlib includes
+file(GLOB_RECURSE LIBGBA_SOURCES "${PROJECT_SOURCE_DIR}/generic/*.c")
+add_library(LIBGBA STATIC
+        ${LIBGBA_SOURCES})
+
+target_include_directories(LIBGBA PRIVATE
+        "${PROJECT_SOURCE_DIR}/decomp/${DECOMP}/include"
+        "${PROJECT_SOURCE_DIR}/generic"
+        "${PROJECT_SOURCE_DIR}/generic/include")
 
 # add decomp library for decomp-specific missing symbols
 add_subdirectory(non-generic/${DECOMP})
@@ -47,8 +57,12 @@ add_subdirectory(non-generic/${DECOMP})
 # need 32 bits for GBA pointer casts to still work
 # do this after including the subdirectory because we want to use 64 bits for the tools
 #set(CMAKE_C_FLAGS "-m32")
-set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_OPTIONS "-m32" LINK_FLAGS "-m32")
-set_target_properties(${DECOMP} PROPERTIES COMPILE_OPTIONS "-m32" LINK_FLAGS "-m32")
+set_target_properties(${PROJECT_NAME} PROPERTIES
+        COMPILE_OPTIONS "-m32"
+        LINK_FLAGS "-m32")
+set_target_properties(${DECOMP} PROPERTIES
+        COMPILE_OPTIONS "-m32"
+        LINK_FLAGS "-m32")
 
 # allow nonmatching functions (less asm)
 target_compile_definitions(${PROJECT_NAME} PUBLIC
@@ -181,6 +195,7 @@ foreach(source_file ${DECOMP_SOURCE_FILES})
             COMMAND PREPROC "${temp_file}" "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/charmap.txt" > "${output_file}"
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
             DEPENDS PREPROC "${DECOMP_SOURCE_RELATIVE_DIR}/${source_file}" RUN_INCFIXALL
+                    ${PROJECT_SOURCE_DIR}/generic/prepend.h
             # todo: DEPENDS on inc files
             COMMENT "Preprocessing ${source_file} to ${output_file}"
     )
@@ -265,3 +280,4 @@ endforeach()
 #target_compile_options(${PROJECT_NAME} PRIVATE "-L")
 
 target_link_libraries(${PROJECT_NAME} ${DECOMP})
+target_link_libraries(${PROJECT_NAME} LIBGBA)

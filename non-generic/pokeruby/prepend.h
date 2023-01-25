@@ -7,8 +7,3 @@
 #include <limits.h>
 
 #undef errno
-
-#define LoadPlayerParty _LoadPlayerParty
-#define LeadMonNicknamed _LeadMonNicknamed
-#define LeadMonHasEffortRibbon _LeadMonHasEffortRibbon
-#define LoadPlayerBag _LoadPlayerBag

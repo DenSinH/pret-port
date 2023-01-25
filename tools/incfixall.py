@@ -51,7 +51,13 @@ EXT_SOURCE = {
 
 
 def is_out_of_date(target, *sources):
+    if not os.path.exists(os.path.join(dest_dir, target)):
+        return True
+
     if not sources:
+        return True
+
+    if not all(os.path.exists(source) for source in sources):
         return True
 
     return max(os.path.getmtime(source) for source in sources) > os.path.getmtime(os.path.join(dest_dir, target))
