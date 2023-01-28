@@ -33,6 +33,7 @@ file(GLOB_RECURSE DECOMP_ASM_INC_FILES "${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DI
 
 # find tools
 add_subdirectory(pret-tools)
+add_subdirectory(testing)
 
 # todo: this is only for clang
 add_link_options("LINKER:/SAFESEH:NO")
@@ -42,14 +43,23 @@ add_executable(${PROJECT_NAME}
         ${DECOMP_HEADER_FILES})
 
 # libgba target for missing stdlib includes
-file(GLOB_RECURSE LIBGBA_SOURCES "${PROJECT_SOURCE_DIR}/generic/*.c")
+file(GLOB_RECURSE LIBGBA_SOURCES
+        "${PROJECT_SOURCE_DIR}/generic/*.cpp"
+        "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/*.libgba.cpp"
+        "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/*.libgba.h"
+        "${PROJECT_SOURCE_DIR}/non-generic/*.libgba.h"
+        "${PROJECT_SOURCE_DIR}/generic/*.c")
 add_library(LIBGBA STATIC
         ${LIBGBA_SOURCES})
+
+find_package(SDL2 REQUIRED)
 
 target_include_directories(LIBGBA PRIVATE
         "${PROJECT_SOURCE_DIR}/decomp/${DECOMP}/include"
         "${PROJECT_SOURCE_DIR}/generic"
-        "${PROJECT_SOURCE_DIR}/generic/include")
+        "${PROJECT_SOURCE_DIR}/non-generic"
+        "${PROJECT_SOURCE_DIR}/generic/include"
+        ${SDL2_INCLUDE_DIR})
 
 # add decomp library for decomp-specific missing symbols
 add_subdirectory(non-generic/${DECOMP})
@@ -125,7 +135,7 @@ set(INCBIN_LIST_FILE "${CMAKE_CURRENT_BINARY_DIR}/temp/incbin_list.txt")
 add_custom_command(
         OUTPUT "${INCBIN_LIST_FILE}"
         COMMAND python ${GFXFINDALL} "${SOURCE_LIST_FILE}" "${HEADER_LIST_FILE}" > "${INCBIN_LIST_FILE}"
-        DEPENDS ${GFXFINDALL} ${ABSOLUTE_DECOMP_SOURCE_FILES} ${DECOMP_HEADER_FILES}
+        DEPENDS ${GFXFINDALL} # ${ABSOLUTE_DECOMP_SOURCE_FILES} ${DECOMP_HEADER_FILES}
         COMMENT "Finding all graphics files"
         VERBATIM
 )
@@ -157,7 +167,7 @@ add_custom_command(
                 "${PROJECT_SOURCE_DIR}/decomp/${DECOMP_DIR}/" "${CMAKE_CURRENT_BINARY_DIR}" "${MK_FILE}" "${INCBIN_LIST_FILE}"
                 > "${INCFIXALL_OUTPUT_FILE}"
         DEPENDS ${INCFIXALL} GBAGFX RSFONT JSONPROC MAPJSON AIF2PCM MID2AGB
-                RUN_GFXFINDALL "${MK_FILE}" ${INCBIN_LIST_FILE}
+                RUN_GFXFINDALL "${MK_FILE}" "${INCBIN_LIST_FILE}"
         COMMENT "Processing all include files"
         VERBATIM
 )
@@ -195,13 +205,16 @@ foreach(source_file ${DECOMP_SOURCE_FILES})
             COMMAND PREPROC "${temp_file}" "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/charmap.txt" > "${output_file}"
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
             DEPENDS PREPROC "${DECOMP_SOURCE_RELATIVE_DIR}/${source_file}" RUN_INCFIXALL
-                    ${PROJECT_SOURCE_DIR}/generic/prepend.h
+                    "${PROJECT_SOURCE_DIR}/generic/prepend.h" ${DECOMP_HEADER_FILES}
             # todo: DEPENDS on inc files
             COMMENT "Preprocessing ${source_file} to ${output_file}"
     )
 
     target_sources(${PROJECT_NAME} PRIVATE "${output_file}")
-    set_source_files_properties("${output_file}" PROPERTIES LANGUAGE C)
+    set_source_files_properties("${output_file}" PROPERTIES
+            LANGUAGE C
+            OBJECT_DEPENDS "${DECOMP_SOURCE_RELATIVE_DIR}/${source_file}"
+            OBJECT_DEPENDS ${DECOMP_HEADER_FILES})
 endforeach()
 
 set(ASM_NONGENERIC_PREPEND_FILE "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/prepend_asm.h")
@@ -277,7 +290,15 @@ foreach(source_file ${DECOMP_ASM_SOUND_FILES})
             INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/decomp/${DECOMP}")
 endforeach()
 
-#target_compile_options(${PROJECT_NAME} PRIVATE "-L")
+target_link_libraries(LIBGBA
+        PRIVATE ${SDL2_LIBRARY})
+if (NOT WIN32)
+    target_link_libraries(LIBGBA PRIVATE -ldl -lpthread)
+else()
+    file(COPY_FILE
+            "${PROJECT_SOURCE_DIR}/SDL2/SDL2.dll"
+            "${CMAKE_CURRENT_BINARY_DIR}/SDL2.dll")
+endif()
 
 target_link_libraries(${PROJECT_NAME} ${DECOMP})
 target_link_libraries(${PROJECT_NAME} LIBGBA)
