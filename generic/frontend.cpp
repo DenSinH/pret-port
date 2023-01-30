@@ -28,7 +28,7 @@ void InitFrontend() {
   renderer = SDL_CreateRenderer(
       window,
       -1,
-      SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
+      SDL_RENDERER_ACCELERATED // | SDL_RENDERER_PRESENTVSYNC
   );
   texture = SDL_CreateTexture(
       renderer,
@@ -37,6 +37,8 @@ void InitFrontend() {
       GbaWidth,
       GbaHeight
   );
+
+  SDL_GL_SetSwapInterval(0);
 }
 
 void CloseFrontend() {
