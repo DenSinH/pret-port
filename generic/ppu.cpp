@@ -158,7 +158,7 @@ void ComposeScanline(color_t* dest, Pixel* scanline) {
 }
 
 void RenderScanline(u32 y, color_t* dest) {
-  u16 mode = REG_DISPSTAT & 0x3;
+  u16 mode = REG_DISPCNT & 0x3;
   Pixel scanline[frontend::GbaWidth] = {};
 
   switch (mode) {
@@ -181,6 +181,29 @@ void RenderScanline(u32 y, color_t* dest) {
       RenderRegularScanline(layers[3], y, scanline);
       break;
     }
+    case 1: {
+      // order layers by priority
+      std::array<u32, 3> layers = { 0, 1, 2 };
+      const std::array<u32, 3> bgcnt = {
+          REG_BG0CNT, REG_BG1CNT, REG_BG2CNT
+      };
+      std::sort(layers.begin(), layers.end(), [&](auto l, auto r) {
+        if ((bgcnt[l] & 3) == (bgcnt[r] & 3)) {
+          return l < r;
+        }
+        return (bgcnt[l] & 3) < (bgcnt[r] & 3);
+      });
+
+      for (const auto& layer: layers) {
+        if (layer == 2) {
+          // affine layer
+        }
+        else {
+          RenderRegularScanline(layer, y, scanline);
+        }
+      }
+      break;
+    }
     default: {
       log_warn("Unimplemented rendering mode: %d", mode);
       break;
@@ -191,8 +214,6 @@ void RenderScanline(u32 y, color_t* dest) {
 }
 
 void RenderFrame(color_t* screen) {
-//  std::memset(screen, 0xff, frontend::GbaWidth * frontend::GbaHeight * sizeof(u16));
-
   for (int i = 0; i < frontend::GbaHeight; i++) {
     RenderScanline(i, screen + i * frontend::GbaWidth);
   }

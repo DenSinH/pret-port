@@ -61,7 +61,7 @@ struct DmaRegister {
       default: log_fatal("Invalid src_addr_ctrl: %d", dst_addr_ctrl);
     }
 
-    log_info("Transferring %x %dbit units from dma", count, 8 * transfer_size);
+//    log_info("Transferring %x %dbit units from dma", count, 8 * transfer_size);
     for (u32 i = 0; i < count; i++) {
       memcpy(dest, src, transfer_size);
       dest = (void*)((uintptr_t)dest + dst_increment);
@@ -81,7 +81,6 @@ DmaRegister DmaRegisters[4] = {};
 extern "C" {
 
 vu8* RegisterAccessIntercept(u32 offset) {
-  log_warn("Direct register access at %08x", offset);
   switch (offset) {
     case REG_OFFSET_VCOUNT: {
       (*(u16*)&TrappedIORegisters[REG_OFFSET_VCOUNT])++;
@@ -92,7 +91,12 @@ vu8* RegisterAccessIntercept(u32 offset) {
       (*(u16*)&TrappedIORegisters[REG_OFFSET_KEYINPUT]) = 0x03ff;
       break;
     }
+    case REG_OFFSET_IME:
+    case REG_OFFSET_IE:
+    case REG_OFFSET_IF:
+      break;
     default:
+      log_warn("Direct register access at %08x", offset);
       break;
   }
 
@@ -123,7 +127,7 @@ void HelperDmaSet(u32 dmaNum, void* src, void* dest, u32 control) {
 //}
 
 void HelperDmaStop(u32 dmaNum) {
-  log_warn("Dma stop");
+//  log_warn("Dma stop");
   DmaRegisters[dmaNum].enable = 0;
   DmaRegisters[dmaNum].timing = 0;
   // todo: dreq
@@ -137,11 +141,11 @@ void HelperDmaStop(u32 dmaNum) {
 //}
 
 void HelperFlashWrite(void* addr, u32 data) {
-  log_warn("Flash write to %p (%08x)", addr, data);
+//  log_warn("Flash write to %p (%08x)", addr, data);
 }
 
 u8 HelperFlashRead(u8* address) {
-  log_warn("Flash read");
+//  log_warn("Flash read");
   if ((uintptr_t)address & 1) {
     return 0x13;
   }

@@ -116,5 +116,6 @@ u32 IntrMain[2048];
 u8 gUnknown_030007B8[0x770] = {};
 
 // other m4a stuff
-char gMaxLines[4] = {};
-u8 gNumMusicPlayers[4] = {};
+// for some reason these are treated very strangely in the original decomp
+u32 gMaxLines = 60;
+u32 gNumMusicPlayers = 4;

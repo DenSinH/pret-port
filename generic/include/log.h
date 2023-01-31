@@ -32,6 +32,18 @@
 
 #endif
 
+#define VERBOSITY_ALL 1
+#define VERBOSITY_DEBUG 2
+#define VERBOSITY_INFO 3
+#define VERBOSITY_WARN 4
+#define VERBOSITY_NONE 5
+
+#ifndef NDEBUG
+#define VERBOSITY VERBOSITY_ALL
+#else
+#define VERBOSITY VERBOSITY_NONE
+#endif
+
 #if VERBOSITY <= VERBOSITY_ALL
 #define log_any(message, ...) do {                        \
         CONSOLE_BLUE();                                \
