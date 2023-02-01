@@ -24,6 +24,15 @@ struct BGData {
   u16 bgcnt;
   bool blend_top;
   bool blend_bottom;
+
+  struct {
+    s32 ref_x;
+    s32 ref_y;
+    s16 pa;
+    s16 pb;
+    s16 pc;
+    s16 pd;
+  } rot_scale;
 };
 
 struct Pixel {
@@ -129,17 +138,53 @@ public:
   }
 };
 
-BGData GetBGData(u32 bg) {
+static BGData GetBGData(u32 bg) {
   switch (bg) {
-    case 0: return { REG_BG0HOFS, REG_BG0VOFS, REG_BG0CNT, (REG_BLDCNT & (1 << bg)) != 0, (REG_BLDCNT & (0x100 << bg)) != 0};
-    case 1: return { REG_BG1HOFS, REG_BG1VOFS, REG_BG1CNT, (REG_BLDCNT & (1 << bg)) != 0, (REG_BLDCNT & (0x100 << bg)) != 0 };
-    case 2: return { REG_BG2HOFS, REG_BG2VOFS, REG_BG2CNT, (REG_BLDCNT & (1 << bg)) != 0, (REG_BLDCNT & (0x100 << bg)) != 0 };
-    case 3: return { REG_BG3HOFS, REG_BG3VOFS, REG_BG3CNT, (REG_BLDCNT & (1 << bg)) != 0, (REG_BLDCNT & (0x100 << bg)) != 0 };
+    case 0: return {
+      REG_BG0HOFS,
+      REG_BG0VOFS,
+      REG_BG0CNT,
+      (REG_BLDCNT & (1 << bg)) != 0,
+      (REG_BLDCNT & (0x100 << bg)) != 0,
+      {}
+    };
+    case 1: return {
+      REG_BG1HOFS,
+      REG_BG1VOFS,
+      REG_BG1CNT,
+      (REG_BLDCNT & (1 << bg)) != 0,
+      (REG_BLDCNT & (0x100 << bg)) != 0,
+      {}
+    };
+    case 2: return {
+      REG_BG2HOFS,
+      REG_BG2VOFS,
+      REG_BG2CNT,
+      (REG_BLDCNT & (1 << bg)) != 0,
+      (REG_BLDCNT & (0x100 << bg)) != 0,
+      {
+          (s32)(REG_BG2X << 4) >> 4,
+          (s32)(REG_BG2Y << 4) >> 4,
+          (s16)REG_BG2PA, (s16)REG_BG2PB, (s16)REG_BG2PC, (s16)REG_BG2PD
+      }
+    };
+    case 3: return {
+      REG_BG3HOFS,
+      REG_BG3VOFS,
+      REG_BG3CNT,
+      (REG_BLDCNT & (1 << bg)) != 0,
+      (REG_BLDCNT & (0x100 << bg)) != 0,
+      {
+          (s32)(REG_BG2X << 4) >> 4,
+          (s32)(REG_BG2Y << 4) >> 4,
+          (s16)REG_BG3PA, (s16)REG_BG3PB, (s16)REG_BG3PC, (s16)REG_BG3PD
+      }
+    };
     default: log_fatal("Invalid background: %d", bg);
   }
 }
 
-u32 VramIndexRegular(u32 tile_x, u32 tile_y, u32 screen_block_size) {
+static u32 VramIndexRegular(u32 tile_x, u32 tile_y, u32 screen_block_size) {
   switch (screen_block_size) {
 
     case 0b00:  // 32x32
@@ -156,7 +201,7 @@ u32 VramIndexRegular(u32 tile_x, u32 tile_y, u32 screen_block_size) {
 }
 
 
-void Render4bpp(Pixel* dest, const BGData& bg, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
+static void Render4bpp(Pixel* dest, const BGData& bg, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
   int screen_x = start_x;
 
   for (int dx = 0; dx < 8; dx++, screen_x += x_sign) {
@@ -176,7 +221,7 @@ void Render4bpp(Pixel* dest, const BGData& bg, int start_x, const int x_sign, u8
   }
 }
 
-void Render8bpp(Pixel* dest, const BGData& bg, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
+static void Render8bpp(Pixel* dest, const BGData& bg, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
   int screen_x = start_x;
 
   for (int dx = 0; dx < 8; dx++, screen_x += x_sign) {
@@ -195,7 +240,7 @@ void Render8bpp(Pixel* dest, const BGData& bg, int start_x, const int x_sign, u8
   }
 }
 
-void RenderRegularScanline(u32 bg, u32 scanline, Pixel* dest) {
+static void RenderRegularScanline(u32 bg, u32 scanline, Pixel* dest) {
   if (!(REG_DISPCNT & (0x0100 << bg))) {
     // disabled in dispcnt
     return;
@@ -250,6 +295,59 @@ void RenderRegularScanline(u32 bg, u32 scanline, Pixel* dest) {
 
       Render8bpp(dest, bg_data, start_x, x_sign, &mem_vram[address], mem_pltt);
     }
+  }
+}
+
+static void SetAffinePixel(Pixel& pixel, const BGData& bg_data, u8 tile_id, u32 cbb, u8 dx, u8 dy) {
+  u32 address = (cbb * 0x4000) | (tile_id * 0x40) | (dy * 8) | dx;
+  u8 vram_entry = mem_vram[address];
+
+  if (vram_entry) {
+    pixel.SetColor(((vu16*)mem_pltt)[vram_entry], bg_data.blend_top, bg_data.blend_bottom);
+  }
+}
+
+static void RenderAffineScanline(u32 bg, u32 scanline, Pixel* dest) {
+  static constexpr u16 AffineSizeTable[] = { 128, 256, 512, 1024 };
+
+  if (!(REG_DISPCNT & (0x0100 << bg))) {
+    // disabled in dispcnt
+    return;
+  }
+
+  auto bg_data = GetBGData(bg);
+
+  // update reference point (happens every scanline)
+  bg_data.rot_scale.ref_x += scanline * bg_data.rot_scale.pb;
+  bg_data.rot_scale.ref_y += scanline * bg_data.rot_scale.pd;
+
+  u32 char_base_block   = (bg_data.bgcnt >> 2) & 3;
+  u32 color_mode        = (bg_data.bgcnt >> 7) & 1;
+  u32 screen_base_block = (bg_data.bgcnt >> 8) & 0x1f;
+  u32 screen_size       = (bg_data.bgcnt >> 14) & 3;
+  bool wraparound       = ((bg_data.bgcnt >> 13) & 1) != 0;
+
+  u32 bg_size           = AffineSizeTable[screen_size];
+
+  for (int i = 0; i < frontend::GbaWidth; i++) {
+    s32 screen_entry_x = (bg_data.rot_scale.ref_x + bg_data.rot_scale.pa * i) >> 8;  // fractional part
+    s32 screen_entry_y = (bg_data.rot_scale.ref_y + bg_data.rot_scale.pc * i) >> 8;  // fractional part
+
+    if ((std::clamp<s32>(screen_entry_x, 0, bg_size) != screen_entry_x) ||
+        (std::clamp<s32>(screen_entry_y, 0, bg_size) != screen_entry_y)) {
+      if (wraparound) {
+        screen_entry_x &= bg_size - 1;
+        screen_entry_y &= bg_size - 1;
+      }
+      else {
+        continue;
+      }
+    }
+
+    u32 screen_entry_index = (screen_base_block * 0x800) | ((screen_entry_y >> 3) * (bg_size >> 3)) | (screen_entry_x >> 3);
+    u8 screen_entry = mem_vram[screen_entry_index];
+
+    SetAffinePixel(dest[i], bg_data, screen_entry, char_base_block, screen_entry_x & 7, screen_entry_y & 7);
   }
 }
 
@@ -310,6 +408,7 @@ void RenderScanline(u32 y, color_t* dest) {
       for (const auto& layer: layers) {
         if (layer == 2) {
           // affine layer
+          RenderAffineScanline(2, y, scanline);
         }
         else {
           RenderRegularScanline(layer, y, scanline);
@@ -317,8 +416,20 @@ void RenderScanline(u32 y, color_t* dest) {
       }
       break;
     }
+    case 2: {
+      if ((REG_BG3CNT & 3) < (REG_BG2CNT & 3)) {
+        // 3 is only rendered first if its priority is strictly lower
+        RenderAffineScanline(3, y, scanline);
+        RenderAffineScanline(2, y, scanline);
+      }
+      else {
+        RenderAffineScanline(2, y, scanline);
+        RenderAffineScanline(3, y, scanline);
+      }
+      break;
+    }
     default: {
-      log_warn("Unimplemented rendering mode: %d", mode);
+      log_fatal("Unimplemented rendering mode: %d", mode);
       break;
     }
   }
