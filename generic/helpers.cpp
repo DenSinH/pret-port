@@ -1,5 +1,6 @@
 #include "log.h"
 #include "helpers.h"
+#include "frontend.h"
 
 struct DmaRegister {
   enum class Timing {
@@ -88,7 +89,7 @@ vu8* RegisterAccessIntercept(u32 offset) {
       break;
     }
     case REG_OFFSET_KEYINPUT: {
-      (*(u16*)&TrappedIORegisters[REG_OFFSET_KEYINPUT]) = 0x03ff;
+      (*(u16*)&TrappedIORegisters[REG_OFFSET_KEYINPUT]) = (~frontend::Keypad) & 0x03ff;
       break;
     }
     case REG_OFFSET_IME:

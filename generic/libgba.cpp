@@ -110,12 +110,7 @@ u16 ArcTan2(s16 x, s16 y) {
 #define CPU_SET_32BIT     0x04000000
 
 void CpuSet(const void *src, void *dest, u32 control) {
-  u32 wordcount = control & 0x00ffffff;
-
-  // forcefully round up to multiples of 8 words
-  if (wordcount & 7) {
-    wordcount = (wordcount & ~7) + 8;
-  }
+  u32 wordcount = control & 0x001f'ffff;
 
   if (control & CPU_SET_32BIT) {
     if (control & CPU_SET_SRC_FIXED) {
@@ -141,8 +136,26 @@ void CpuSet(const void *src, void *dest, u32 control) {
 
 #define CPU_FAST_SET_SRC_FIXED 0x01000000
 
-void CpuFastSet(const void *src, void *dest, u32 control) {
-  log_fatal("CpuFastSet call");
+void CpuFastSet(const void *src, void *_dest, u32 control) {
+  if (control & CPU_FAST_SET_SRC_FIXED) {
+    u32* dest = (u32*)_dest;
+    // todo: safe reads
+    u32 value = *(u32*)src;
+    for (s32 count = control & 0x1f'ffff; count > 0; count -= 8) {
+      for (int i = 0; i < 8; i++) {
+        *dest++ = value;
+      }
+    }
+  }
+  else {
+    s32 count = control & 0x1f'ffff;
+
+    // round up
+    count = (count + 7) & ~7;
+
+    // no need to "emulate" transferring 32 bytes at a time
+    std::memcpy(_dest, src, count * sizeof(u32));
+  }
 }
 
 const static u16 SinLut[] = {
@@ -195,8 +208,18 @@ void BgAffineSet(struct BgAffineSrcData *src, struct BgAffineDstData *dest, s32 
   }
 }
 
-void ObjAffineSet(struct ObjAffineSrcData *src, void *dest, s32 count, s32 offset) {
-  log_fatal("ObjAffineSet call");
+void ObjAffineSet(struct ObjAffineSrcData *src, void *_dest, s32 count, s32 offset) {
+  u16* dest = (u16*)_dest;
+  for (int i = 0; i < count; i++) {
+    u16 theta = src[i].rotation >> 8;
+    s32 a = (s16)SinLut[(theta + 0x40) & 0xff];
+    s32 b = (s16)SinLut[theta];
+
+    *dest++ =  (src[i].xScale * a) >> 14;
+    *dest++ = -(src[i].xScale * b) >> 14;
+    *dest++ =  (src[i].yScale * b) >> 14;
+    *dest++ =  (src[i].yScale * a) >> 14;
+  }
 }
 
 void LZ77UnCompWram(const void *_src, void *_dest) {

@@ -5,6 +5,7 @@ project(${PROJECT_NAME} C CXX ASM)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 set(CMAKE_C_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 
 set(DECOMP_DIR ${DECOMP})
@@ -85,6 +86,9 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
         DEBUG=0
         RUBY
         MODERN=1)
+
+target_compile_definitions(${PROJECT_NAME} PUBLIC
+        PORT_DEBUG_CHECKS)
 
 
 # compile options for target

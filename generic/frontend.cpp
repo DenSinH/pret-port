@@ -9,8 +9,46 @@ namespace frontend {
 SDL_Window* window = nullptr;
 SDL_Renderer* renderer = nullptr;
 SDL_Texture* texture = nullptr;
+SDL_GameController* controller = nullptr;
+
+enum class KeypadButton : u16 {
+  A      = 0x0001,
+  B      = 0x0002,
+  Select = 0x0004,
+  Start  = 0x0008,
+  Right  = 0x0010,
+  Left   = 0x0020,
+  Up     = 0x0040,
+  Down   = 0x0080,
+  R      = 0x0100,
+  L      = 0x0200,
+};
+
+u16 Keypad = 0;
 
 u16 Screen[GbaWidth * GbaHeight];
+
+static void InitGamecontroller() {
+  if (SDL_NumJoysticks() < 0) {
+    printf("No gamepads detected\n");
+  }
+  else {
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+      if (SDL_IsGameController(i)) {
+        controller = SDL_GameControllerOpen(i);
+
+        if (!controller) {
+          printf("Failed to connect to gamecontroller at index %d\n", i);
+          continue;
+        }
+
+        printf("Connected game controller at index %d\n", i);
+        return;
+      }
+    }
+  }
+  printf("No gamepads detected (only joysticks)\n");
+}
 
 void InitFrontend() {
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER)) {
@@ -32,13 +70,14 @@ void InitFrontend() {
   );
   texture = SDL_CreateTexture(
       renderer,
-      SDL_PIXELFORMAT_ARGB1555,
+      SDL_PIXELFORMAT_ABGR1555,
       SDL_TEXTUREACCESS_STREAMING,
       GbaWidth,
       GbaHeight
   );
 
   SDL_GL_SetSwapInterval(0);
+  InitGamecontroller();
 }
 
 void CloseFrontend() {
@@ -55,6 +94,38 @@ void RunFrame() {
       case SDL_QUIT:
         CloseFrontend();
         exit(0);
+      case SDL_CONTROLLERBUTTONDOWN: {
+        switch (event.cbutton.button) {
+          case 0: Keypad |= static_cast<u16>(KeypadButton::A); break;
+          case 1: Keypad |= static_cast<u16>(KeypadButton::B); break;
+          case 4: Keypad |= static_cast<u16>(KeypadButton::Select); break;
+          case 6: Keypad |= static_cast<u16>(KeypadButton::Start); break;
+          case 11: Keypad |= static_cast<u16>(KeypadButton::Up); break;
+          case 12: Keypad |= static_cast<u16>(KeypadButton::Down); break;
+          case 13: Keypad |= static_cast<u16>(KeypadButton::Left); break;
+          case 14: Keypad |= static_cast<u16>(KeypadButton::Right); break;
+          case 9: Keypad |= static_cast<u16>(KeypadButton::L); break;
+          case 10: Keypad |= static_cast<u16>(KeypadButton::R); break;
+          default: break;
+        }
+        break;
+      }
+      case SDL_CONTROLLERBUTTONUP: {
+        switch (event.cbutton.button) {
+          case 0: Keypad &= ~static_cast<u16>(KeypadButton::A); break;
+          case 1: Keypad &= ~static_cast<u16>(KeypadButton::B); break;
+          case 4: Keypad &= ~static_cast<u16>(KeypadButton::Select); break;
+          case 6: Keypad &= ~static_cast<u16>(KeypadButton::Start); break;
+          case 11: Keypad &= ~static_cast<u16>(KeypadButton::Up); break;
+          case 12: Keypad &= ~static_cast<u16>(KeypadButton::Down); break;
+          case 13: Keypad &= ~static_cast<u16>(KeypadButton::Left); break;
+          case 14: Keypad &= ~static_cast<u16>(KeypadButton::Right); break;
+          case 9: Keypad &= ~static_cast<u16>(KeypadButton::L); break;
+          case 10: Keypad &= ~static_cast<u16>(KeypadButton::R); break;
+          default: break;
+        }
+        break;
+      }
       default:
         break;
     }
