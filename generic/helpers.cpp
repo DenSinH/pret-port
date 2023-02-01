@@ -141,18 +141,4 @@ void HelperDmaStop(u32 dmaNum) {
 //    dmaRegs[5];                                                 \
 //}
 
-void HelperFlashWrite(void* addr, u32 data) {
-//  log_warn("Flash write to %p (%08x)", addr, data);
-}
-
-u8 HelperFlashRead(u8* address) {
-//  log_warn("Flash read");
-  if ((uintptr_t)address & 1) {
-    return 0x13;
-  }
-  else {
-    return 0x62;
-  }
-}
-
 }

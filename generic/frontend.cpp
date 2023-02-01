@@ -1,10 +1,16 @@
 #include "helpers.h"
 #include "frontend.h"
+#include "agb_flash_port.h"
 #include "ppu.h"
 #include "log.h"
 #include <SDL.h>
 
+#include <cstdio>
+
 namespace frontend {
+
+#define WINDOW_TITLE "Pokemon Ruby"
+#define DO_FRAME_COUNTER
 
 SDL_Window* window = nullptr;
 SDL_Renderer* renderer = nullptr;
@@ -50,13 +56,17 @@ static void InitGamecontroller() {
   printf("No gamepads detected (only joysticks)\n");
 }
 
+u64 FrameCounter = 0;
+u64 OldTicks = 0;
+char TitleBuffer[200] = {};
+
 void InitFrontend() {
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER)) {
     log_fatal("Error initializing SDL2: %s", SDL_GetError());
   }
 
   window = SDL_CreateWindow(
-      "Pokemon Ruby",
+      WINDOW_TITLE,
       SDL_WINDOWPOS_CENTERED,
       SDL_WINDOWPOS_CENTERED,
       Scale * GbaWidth,
@@ -78,6 +88,9 @@ void InitFrontend() {
 
   SDL_GL_SetSwapInterval(0);
   InitGamecontroller();
+
+  flash::LoadFlashMemory();
+  OldTicks = SDL_GetTicks();
 }
 
 void CloseFrontend() {
@@ -85,6 +98,8 @@ void CloseFrontend() {
 
   SDL_DestroyWindow(window);
   SDL_Quit();
+
+  flash::DumpFlashMemory();
 }
 
 void RunFrame() {
@@ -132,6 +147,20 @@ void RunFrame() {
   }
 
   ppu::RenderFrame(Screen);
+
+#ifdef DO_FRAME_COUNTER
+  FrameCounter++;
+  if (FrameCounter >= 300) {
+    u64 ticks = SDL_GetTicks();
+    if (ticks - OldTicks >= 1000) {
+      float fps = (1000.0 * (double)FrameCounter) / (double)(ticks - OldTicks);
+      OldTicks = ticks;
+      FrameCounter = 0;
+      std::snprintf(TitleBuffer, sizeof(TitleBuffer), WINDOW_TITLE " (%.2f fps)", fps);
+      SDL_SetWindowTitle(window, TitleBuffer);
+    }
+  }
+#endif
 
   SDL_RenderClear(renderer);
   SDL_UpdateTexture(texture, nullptr, (const void *)Screen, sizeof(u16) * GbaWidth);
