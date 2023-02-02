@@ -5,6 +5,8 @@
 #include <memory>
 #include <array>
 #include <algorithm>
+#include <vector>
+#include <iterator>
 
 using color_t = u16;
 
@@ -33,6 +35,11 @@ struct BGData {
     s16 pc;
     s16 pd;
   } rot_scale;
+};
+
+struct ObjSize {
+  u32 width;
+  u32 height;
 };
 
 struct Pixel {
@@ -146,7 +153,7 @@ static BGData GetBGData(u32 bg) {
       REG_BG0CNT,
       (REG_BLDCNT & (1 << bg)) != 0,
       (REG_BLDCNT & (0x100 << bg)) != 0,
-      {}
+      {}  // no affine parameters for layer
     };
     case 1: return {
       REG_BG1HOFS,
@@ -154,7 +161,7 @@ static BGData GetBGData(u32 bg) {
       REG_BG1CNT,
       (REG_BLDCNT & (1 << bg)) != 0,
       (REG_BLDCNT & (0x100 << bg)) != 0,
-      {}
+      {}  // no affine parameters for layer
     };
     case 2: return {
       REG_BG2HOFS,
@@ -201,7 +208,7 @@ static u32 VramIndexRegular(u32 tile_x, u32 tile_y, u32 screen_block_size) {
 }
 
 
-static void Render4bpp(Pixel* dest, const BGData& bg, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
+static void Render4bpp(Pixel* dest, bool blend_top, bool blend_bottom, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
   int screen_x = start_x;
 
   for (int dx = 0; dx < 8; dx++, screen_x += x_sign) {
@@ -216,12 +223,12 @@ static void Render4bpp(Pixel* dest, const BGData& bg, int start_x, const int x_s
 
     // todo: check window
     if (palette_nibble) {
-      dest[screen_x].SetColor(((vu16*)palette_base)[palette_nibble], bg.blend_top, bg.blend_bottom);
+      dest[screen_x].SetColor(((vu16*)palette_base)[palette_nibble], blend_top, blend_bottom);
     }
   }
 }
 
-static void Render8bpp(Pixel* dest, const BGData& bg, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
+static void Render8bpp(Pixel* dest, bool blend_top, bool blend_bottom, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
   int screen_x = start_x;
 
   for (int dx = 0; dx < 8; dx++, screen_x += x_sign) {
@@ -235,7 +242,7 @@ static void Render8bpp(Pixel* dest, const BGData& bg, int start_x, const int x_s
 
     // todo: check window
     if (vram_entry) {
-      dest[screen_x].SetColor(((vu16*)palette_base)[vram_entry], bg.blend_top, bg.blend_bottom);
+      dest[screen_x].SetColor(((vu16*)palette_base)[vram_entry], blend_top, blend_bottom);
     }
   }
 }
@@ -286,14 +293,30 @@ static void RenderRegularScanline(u32 bg, u32 scanline, Pixel* dest) {
       address += tile_id * 0x20;  // beginning of tile
       address += dy * 4;          // beginning of tile sliver
 
-      Render4bpp(dest, bg_data, start_x, x_sign, &mem_vram[address], &mem_pltt[palette_bank * 0x20]);
+      Render4bpp(
+          dest,
+          bg_data.blend_top,
+          bg_data.blend_bottom,
+          start_x,
+          x_sign,
+          &mem_vram[address],
+          &mem_pltt[palette_bank * 0x20]
+      );
     }
     else {
       // 8bpp
       address += tile_id * 0x40;  // beginning of tile
       address += dy * 8;          // beginning of tile sliver
 
-      Render8bpp(dest, bg_data, start_x, x_sign, &mem_vram[address], mem_pltt);
+      Render8bpp(
+          dest,
+          bg_data.blend_top,
+          bg_data.blend_bottom,
+          start_x,
+          x_sign,
+          &mem_vram[address],
+          mem_pltt
+      );
     }
   }
 }
@@ -351,7 +374,130 @@ static void RenderAffineScanline(u32 bg, u32 scanline, Pixel* dest) {
   }
 }
 
-void ComposeScanline(color_t* dest, Pixel* scanline) {
+static constexpr ObjSize ObjSizeTable[3][4] = {
+    { {8, 8},  {16, 16}, {32, 32}, {64, 64} },
+    { {16, 8}, {32, 8},  {32, 16}, {64, 32} },
+    { {8, 16}, {8, 32},  {16, 32}, {32, 64} }
+};
+
+static_assert(sizeof(struct OamData) == 8, "Incorrect OamData size for use");
+static void RenderRegularObject(const struct OamData& obj, u32 scanline, Pixel* dest, bool obj_1d_mapping) {
+  s32 start_x = (s32)(obj.x << 23) >> 23;
+  auto size = ObjSizeTable[obj.shape][obj.size];
+  s16 obj_y = obj.y;
+  if (obj_y > frontend::GbaHeight) obj_y -= 0x100;
+  s32 dy = scanline - obj_y;
+  if (obj.matrixNum & (1 << 4)) {
+    // yflip
+    dy = size.height - dy - 1;
+  }
+
+  s32 x_sign = 1;
+  if (obj.matrixNum & (1 << 3)) {
+    // hflip
+    x_sign = -1;
+    start_x += size.width - 1;
+  }
+
+  // offset of tile
+  u32 sliver_base_address = obj.tileNum * 0x20;
+  u32 sliver_size = obj.bpp ? 8 : 4;
+  sliver_base_address += obj_1d_mapping ? size.width * (dy >> 3) * sliver_size : (32 * 0x20 * (dy >> 3));
+  // within tile
+  sliver_base_address += sliver_size * (dy & 7);
+
+  // VRAM masking for OBJ start
+  sliver_base_address = 0x1'0000 | (sliver_base_address & 0x7fff);
+
+  if (obj.bpp) {
+    for (int tile_x = 0; tile_x < size.width >> 3; tile_x++) {
+      Render8bpp(
+          dest,
+          false,  // todo
+          false,  // todo
+          start_x + 8 * tile_x * x_sign,
+          x_sign,
+          &mem_vram[sliver_base_address + 0x40 * tile_x],
+          &mem_pltt[0x200]
+      );
+    }
+  }
+  else {
+    for (int tile_x = 0; tile_x < size.width >> 3; tile_x++) {
+      Render4bpp(
+          dest,
+          false,  // todo
+          false,  // todo
+          start_x + 8 * tile_x * x_sign,
+          x_sign,
+          &mem_vram[sliver_base_address + 0x20 * tile_x],
+          &mem_pltt[0x200 + 0x20 * obj.paletteNum]
+      );
+    }
+  }
+}
+
+static std::vector<struct OamData> GetObjects(u32 scanline) {
+  const u16 dispcnt = REG_DISPCNT;
+  if (!(dispcnt & DISPCNT_OBJ_ON)) {
+    return {};
+  }
+  std::vector<std::pair<u32, struct OamData>> oam{};
+
+  for (u16 i = 0; i < 0x80; i++) {
+    struct OamData obj = ((struct OamData*)mem_oam)[i];
+
+    if (obj.affineMode == 0b10) continue;  // sprite hidden
+    if (obj.objMode    == 0b10) continue;  // object window
+
+    s16 obj_y = obj.y;
+    if (obj_y > frontend::GbaHeight) obj_y -= 0x100;
+    const ObjSize size = ObjSizeTable[obj.shape][obj.size];
+    switch (obj.affineMode) {
+      case 0b00:
+      case 0b01:
+        if (std::clamp<s16>(obj_y, scanline - size.height + 1, scanline) == obj_y)
+          oam.emplace_back(i, obj);
+        break;
+      case 0b11:
+        // affine double
+        if (std::clamp<s16>(obj_y, scanline - 2 * size.height + 1, scanline) == obj_y)
+          oam.emplace_back(i, obj);
+        break;
+      default:
+        log_fatal("Invalid object mode: %x", obj.objMode);
+    }
+  }
+
+  // sort based on priority, then index
+  std::sort(oam.begin(), oam.end(), [](auto& obj_a, auto& obj_b) {
+    if (obj_a.second.priority == obj_b.second.priority) {
+      return obj_a.first < obj_b.first;
+    }
+    return obj_a.second.priority < obj_b.second.priority;
+  });
+
+  std::vector<struct OamData> result{};
+  result.reserve(oam.size());
+  std::transform(oam.begin(), oam.end(), std::back_inserter(result), [](const auto& p) { return p.second; });
+  return result;
+}
+
+void RenderObject(const struct OamData& obj, u32 scanline, Pixel* dest, bool obj_1d_mapping) {
+  switch (obj.affineMode) {
+    case 0b00:
+      RenderRegularObject(obj, scanline, dest, obj_1d_mapping);
+      break;
+    case 0b01:
+      // affine
+      break;
+    case 0b11:
+      // affine double
+      break;
+  }
+}
+
+static void ComposeScanline(color_t* dest, Pixel* scanline) {
   const u16 bldcnt = REG_BLDCNT;
   auto blend_mode = static_cast<BlendMode>((bldcnt >> 6) & 3);
   bool backdrop_top   = (bldcnt >> 5) & 1;
@@ -368,50 +514,69 @@ void ComposeScanline(color_t* dest, Pixel* scanline) {
   }
 }
 
-void RenderScanline(u32 y, color_t* dest) {
-  u16 mode = REG_DISPCNT & 0x3;
-  Pixel scanline[frontend::GbaWidth] = {};
+static void RenderScanline(u32 scanline, color_t* dest) {
+  Pixel pixels[frontend::GbaWidth] = {};
 
+  const u16 dispcnt = REG_DISPCNT;
+  u16 mode = dispcnt & 0x3;
+
+  auto objects = GetObjects(scanline);
+  auto curr_obj = objects.begin();
+  bool obj_1d_mapping = (dispcnt & DISPCNT_OBJ_1D_MAP) != 0;
+
+  // only modes 0 and 1 are used in pokeruby
+  // just look for DISPCNT_MODE_x macros, and you will not find any
+  // other than 0 and 1
   switch (mode) {
     case 0: {
       // order layers by priority
-      std::array<u32, 4> layers = { 0, 1, 2, 3 };
-      const std::array<u32, 4> bgcnt = {
-          REG_BG0CNT, REG_BG1CNT, REG_BG2CNT, REG_BG3CNT
+      std::array<u32, 4>       layers = { 0, 1, 2, 3 };
+      const std::array<u32, 4> priorities  = {
+          REG_BG0CNT & 3u,
+          REG_BG1CNT & 3u,
+          REG_BG2CNT & 3u,
+          REG_BG3CNT & 3u,
       };
+
       std::sort(layers.begin(), layers.end(), [&](auto l, auto r) {
-        if ((bgcnt[l] & 3) == (bgcnt[r] & 3)) {
+        if (priorities[l] == priorities[r]) {
           return l < r;
         }
-        return (bgcnt[l] & 3) < (bgcnt[r] & 3);
+        return priorities[l] < priorities[r];
       });
 
-      RenderRegularScanline(layers[0], y, scanline);
-      RenderRegularScanline(layers[1], y, scanline);
-      RenderRegularScanline(layers[2], y, scanline);
-      RenderRegularScanline(layers[3], y, scanline);
+      for (const auto& layer : layers) {
+        for (; curr_obj != objects.end() && curr_obj->priority <= priorities[layer]; curr_obj++)
+          RenderObject(*curr_obj, scanline, pixels, obj_1d_mapping);
+        RenderRegularScanline(layer, scanline, pixels);
+      }
       break;
     }
     case 1: {
       // order layers by priority
-      std::array<u32, 3> layers = { 0, 1, 2 };
-      const std::array<u32, 3> bgcnt = {
-          REG_BG0CNT, REG_BG1CNT, REG_BG2CNT
+      std::array<u32, 3>       layers = { 0, 1, 2 };
+      const std::array<u32, 4> priorities  = {
+          REG_BG0CNT & 3u,
+          REG_BG1CNT & 3u,
+          REG_BG2CNT & 3u,
       };
+
       std::sort(layers.begin(), layers.end(), [&](auto l, auto r) {
-        if ((bgcnt[l] & 3) == (bgcnt[r] & 3)) {
+        if (priorities[l] == priorities[r]) {
           return l < r;
         }
-        return (bgcnt[l] & 3) < (bgcnt[r] & 3);
+        return priorities[l] < priorities[r];
       });
 
       for (const auto& layer: layers) {
+        for (; curr_obj != objects.end() && curr_obj->priority <= priorities[layer]; curr_obj++)
+          RenderObject(*curr_obj, scanline, pixels, obj_1d_mapping);
         if (layer == 2) {
           // affine layer
-          RenderAffineScanline(2, y, scanline);
+          RenderAffineScanline(2, scanline, pixels);
         }
         else {
-          RenderRegularScanline(layer, y, scanline);
+          RenderRegularScanline(layer, scanline, pixels);
         }
       }
       break;
@@ -419,25 +584,26 @@ void RenderScanline(u32 y, color_t* dest) {
     case 2: {
       if ((REG_BG3CNT & 3) < (REG_BG2CNT & 3)) {
         // 3 is only rendered first if its priority is strictly lower
-        RenderAffineScanline(3, y, scanline);
-        RenderAffineScanline(2, y, scanline);
+        RenderAffineScanline(3, scanline, pixels);
+        RenderAffineScanline(2, scanline, pixels);
       }
       else {
-        RenderAffineScanline(2, y, scanline);
-        RenderAffineScanline(3, y, scanline);
+        RenderAffineScanline(2, scanline, pixels);
+        RenderAffineScanline(3, scanline, pixels);
       }
       break;
     }
     default: {
       log_fatal("Unimplemented rendering mode: %d", mode);
-      break;
     }
   }
 
-  ComposeScanline(dest, scanline);
+  ComposeScanline(dest, pixels);
 }
 
 void RenderFrame(color_t* screen) {
+  // todo: check if gMain.HBlankCallback is set for one shot rendering
+  //       or if any DMA starts at HBlank
   for (int i = 0; i < frontend::GbaHeight; i++) {
     RenderScanline(i, screen + i * frontend::GbaWidth);
   }

@@ -251,7 +251,7 @@ void ply_note(u32 note_cmd, struct MusicPlayerInfo *info, struct MusicPlayerTrac
   u8 type = instrument->type;
 
   if (type & (TONEDATA_TYPE_RHY | TONEDATA_TYPE_SPL)) {
-    log_warn("spl instrument unimplemented");
+//    log_warn("spl instrument unimplemented");
 //    u8 instrumentIndex;
 //    if (instrument->type & TONEDATA_TYPE_SPL) {
 //      instrumentIndex = instrument->keySplitTable[track->key];
@@ -937,6 +937,9 @@ void m4aSoundVSync(void) {
 
   // Reload the PCM DMA counter.
   sound_info->pcmDmaCounter = sound_info->pcmDmaPeriod;
+
+  // todo: HLE
+  return;
   const u32 dma1cnt_h = REG_DMA1CNT_H;
   if (dma1cnt_h & DMA_REPEAT) {
     // 	ldr r1, =((DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DEST_FIXED) << 16) | 4
@@ -955,9 +958,8 @@ void m4aSoundVSync(void) {
   REG_DMA1CNT_H = DMA_32BIT;
   REG_DMA2CNT_H = DMA_32BIT;
 
-  // todo: uncomment / HLE
   // enable sound FIFO
   // LSB is 0, so DMA_SRC_INC is used (destination is always fixed in FIFO mode)
-//  REG_DMA1CNT_H = (DMA_ENABLE | DMA_START_SPECIAL | DMA_32BIT | DMA_REPEAT);
-//  REG_DMA2CNT_H = (DMA_ENABLE | DMA_START_SPECIAL | DMA_32BIT | DMA_REPEAT);
+  REG_DMA1CNT_H = (DMA_ENABLE | DMA_START_SPECIAL | DMA_32BIT | DMA_REPEAT);
+  REG_DMA2CNT_H = (DMA_ENABLE | DMA_START_SPECIAL | DMA_32BIT | DMA_REPEAT);
 }

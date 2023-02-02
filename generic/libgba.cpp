@@ -17,7 +17,7 @@ void LZ77Uncomp(const void* _src, void* _dest) {
   u32 header = *(u32*)src;
   src += 4;
 
-  // todo: bios address check?
+  // we can't perform a BIOS address check
   u32 count = 0;
   u32 shift = 0;
   T buffer = 0;
@@ -81,14 +81,13 @@ extern u32 intr_vector;
 
 
 void SoftReset(u32 resetFlags) {
-  log_debug("SoftReset call");
   intr_check = 0;
   intr_vector = 0;
 }
 
 void RegisterRamReset(u32 resetFlags) {
   // we assume that RAM has been reset properly by the host anyway...
-  // todo: reset emulated memory regions?
+  // todo: reset emulated memory regions? (vram, pltt, oam, shared_mem)
   log_debug("RegisterRamReset call with flags %08x, ignoring...", resetFlags);
 }
 
@@ -223,12 +222,10 @@ void ObjAffineSet(struct ObjAffineSrcData *src, void *_dest, s32 count, s32 offs
 }
 
 void LZ77UnCompWram(const void *_src, void *_dest) {
-  log_debug("LZ77UnCompWram call");
   LZ77Uncomp<u8>(_src, _dest);
 }
 
 void LZ77UnCompVram(const void *_src, void *_dest) {
-  log_debug("LZ77UnCompVram call");
   LZ77Uncomp<u16>(_src, _dest);
 }
 
