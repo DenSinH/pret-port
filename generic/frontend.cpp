@@ -1,7 +1,7 @@
 #include "helpers.h"
 #include "frontend.h"
 #include "agb_flash_port.h"
-#include "ppu.h"
+#include "ppu/ppu.h"
 #include "log.h"
 #include <SDL.h>
 

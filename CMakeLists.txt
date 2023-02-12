@@ -46,6 +46,7 @@ add_executable(${PROJECT_NAME}
 # libgba target for missing stdlib includes
 file(GLOB_RECURSE LIBGBA_SOURCES
         "${PROJECT_SOURCE_DIR}/generic/*.cpp"
+        "${PROJECT_SOURCE_DIR}/generic/ppu/*.cpp"
         "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/*.libgba.cpp"
         "${PROJECT_SOURCE_DIR}/non-generic/${DECOMP}/*.libgba.h"
         "${PROJECT_SOURCE_DIR}/non-generic/*.libgba.h"

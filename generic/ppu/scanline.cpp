@@ -1,6 +1,7 @@
+#include "scanline.h"
 #include "ppu.h"
+#include "internal.h"
 #include "frontend.h"
-#include "log.h"
 
 #include <memory>
 #include <array>
@@ -8,214 +9,19 @@
 #include <vector>
 #include <iterator>
 
-using color_t = u16;
+#undef max
+#undef min
 
 
 namespace ppu {
 
-enum class BlendMode : u32 {
-  Off = 0,
-  Normal = 1,
-  White = 2,
-  Black = 3,
-};
+static inline void Render4bpp(Pixel* dest, bool blend_top, bool blend_bottom, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
+  const int clamped_start = std::clamp(start_x, 0, frontend::GbaWidth);
+  const int clamped_end = std::clamp(start_x + 8 * x_sign, 0, frontend::GbaWidth);
+  const int dx_min  = x_sign * (clamped_start - start_x);
+  const int dx_max  = x_sign * (clamped_end   - start_x);
 
-struct BGData {
-  u16 hofs;
-  u16 vofs;
-  u16 bgcnt;
-  bool blend_top;
-  bool blend_bottom;
-
-  struct {
-    s32 ref_x;
-    s32 ref_y;
-    s16 pa;
-    s16 pb;
-    s16 pc;
-    s16 pd;
-  } rot_scale;
-};
-
-struct ObjSize {
-  u32 width;
-  u32 height;
-};
-
-struct Pixel {
-private:
-  struct {
-    u16 color;
-    bool blend;
-  } layers[2];
-  uint_fast8_t filled;
-
-  static u16 Blend(u16 color_a, u16 color_b, u16 eva, u16 evb) {
-    u16 blend = 0;
-
-    // colors in BGR555 format
-    u16 bgr;
-
-    // Blend red
-    bgr = (u16)(((color_a & 0x001f) * eva + (color_b & 0x001f) * evb) >> 4);                  // 1.4 fixed point
-    blend |= (u16)(bgr >= 0x1f ? 0x001f : (bgr << 0));
-
-    // Blend green
-    bgr = (u16)((((color_a & 0x03e0) >> 5) * eva + ((color_b & 0x03e0) >> 5) * evb) >> 4);    // 1.4 fixed point
-    blend |= (u16)(bgr >= 0x1f ? 0x03e0 : (bgr << 5));
-
-    // Blend blue
-    bgr = (u16)((((color_a & 0x7c00) >> 10) * eva + ((color_b & 0x7c00) >> 10) * evb) >> 4);  // 1.4 fixed point
-    blend |= (u16)(bgr >= 0x1f ? 0x7c00 : (bgr << 10));
-
-    return blend;
-  }
-
-public:
-  inline bool IsFilled() {
-    switch(filled) {
-      case 0: return false;
-      case 1: return !layers[0].blend;
-      case 2:
-      default: return true;
-    }
-  }
-
-  inline void SetColor(u16 color, bool blend_top, bool blend_bottom) {
-    switch(filled) {
-      case 0:
-        layers[0].color = color;
-        layers[0].blend = blend_top;
-        // if layer does not blend, then we are done
-        filled = blend_top ? 1 : 2;
-        break;
-      case 1:
-        if (blend_bottom) {
-          layers[1].color = color;
-        }
-        layers[1].blend = blend_bottom;
-        filled = 2;
-      case 2:
-      default:
-        return;
-    }
-  }
-
-  inline u16 GetColor(BlendMode mode, u16 backdrop, bool backdrop_top, bool backdrop_bottom, u16 eva, u16 evb, u16 evy) {
-    switch (mode) {
-      case BlendMode::Off:
-        return filled > 0 ? layers[0].color : backdrop;
-      case BlendMode::Normal:
-        switch(filled) {
-          case 0: return backdrop;
-          case 1:
-            if (layers[0].blend && backdrop_bottom) {
-              return Blend(layers[0].color, backdrop, eva, evb);
-            }
-            return layers[0].color;
-          case 2:
-            if (layers[0].blend && layers[1].blend) {
-              return Blend(layers[0].color, layers[1].color, eva, evb);
-            }
-            return layers[0].color;
-          default:
-            log_fatal("Invalid filled value");
-        }
-      case BlendMode::White:
-        if (filled > 0) [[likely]] {
-          return Blend(layers[0].color, 0x7fff, 0x10 - evy, evy);
-        }
-        else {
-          if (backdrop_top) {
-            return Blend(backdrop, 0x7fff, 0x10 - evy, evy);
-          }
-          return backdrop;
-        }
-      case BlendMode::Black:
-        if (filled > 0) [[likely]] {
-          return Blend(layers[0].color, 0x0000, 0x10 - evy, evy);
-        }
-        else {
-          if (backdrop_top) {
-            return Blend(backdrop, 0x0000, 0x10 - evy, evy);
-          }
-          return backdrop;
-        }
-    }
-  }
-};
-
-static BGData GetBGData(u32 bg) {
-  switch (bg) {
-    case 0: return {
-      REG_BG0HOFS,
-      REG_BG0VOFS,
-      REG_BG0CNT,
-      (REG_BLDCNT & (1 << bg)) != 0,
-      (REG_BLDCNT & (0x100 << bg)) != 0,
-      {}  // no affine parameters for layer
-    };
-    case 1: return {
-      REG_BG1HOFS,
-      REG_BG1VOFS,
-      REG_BG1CNT,
-      (REG_BLDCNT & (1 << bg)) != 0,
-      (REG_BLDCNT & (0x100 << bg)) != 0,
-      {}  // no affine parameters for layer
-    };
-    case 2: return {
-      REG_BG2HOFS,
-      REG_BG2VOFS,
-      REG_BG2CNT,
-      (REG_BLDCNT & (1 << bg)) != 0,
-      (REG_BLDCNT & (0x100 << bg)) != 0,
-      {
-          (s32)(REG_BG2X << 4) >> 4,
-          (s32)(REG_BG2Y << 4) >> 4,
-          (s16)REG_BG2PA, (s16)REG_BG2PB, (s16)REG_BG2PC, (s16)REG_BG2PD
-      }
-    };
-    case 3: return {
-      REG_BG3HOFS,
-      REG_BG3VOFS,
-      REG_BG3CNT,
-      (REG_BLDCNT & (1 << bg)) != 0,
-      (REG_BLDCNT & (0x100 << bg)) != 0,
-      {
-          (s32)(REG_BG2X << 4) >> 4,
-          (s32)(REG_BG2Y << 4) >> 4,
-          (s16)REG_BG3PA, (s16)REG_BG3PB, (s16)REG_BG3PC, (s16)REG_BG3PD
-      }
-    };
-    default: log_fatal("Invalid background: %d", bg);
-  }
-}
-
-static u32 VramIndexRegular(u32 tile_x, u32 tile_y, u32 screen_block_size) {
-  switch (screen_block_size) {
-
-    case 0b00:  // 32x32
-      return (u32)(((tile_y & 0x1f) << 6) | ((tile_x & 0x1f) << 1));
-    case 0b01:  // 64x32
-      return (u32)(((tile_x & 0x3f) > 31 ? 0x800 : 0) | ((tile_y & 0x1f) << 6) | ((tile_x & 0x1f) << 1));
-    case 0b10:  // 32x64
-      return (u32)(((tile_y & 0x3f) > 31 ? 0x800 : 0) | ((tile_y & 0x1f) << 6) | ((tile_x & 0x1f) << 1));
-    case 0b11:  // 64x64
-      return (u32)(((tile_y & 0x3f) > 31 ? 0x1000 : 0) | ((tile_x & 0x3f) > 31 ? 0x800 : 0) | ((tile_y & 0x1f) << 6) | ((tile_x & 0x1f) << 1));
-    default:
-      log_fatal("Invalid screen block size: %d", screen_block_size);
-  }
-}
-
-
-static void Render4bpp(Pixel* dest, bool blend_top, bool blend_bottom, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
-  int screen_x = start_x;
-
-  for (int dx = 0; dx < 8; dx++, screen_x += x_sign) {
-    if (screen_x < 0 || screen_x >= frontend::GbaWidth) {
-      if ((x_sign < 0) == (screen_x < 0)) return;
-      continue;
-    }
+  for (int dx = dx_min, screen_x = clamped_start; dx < dx_max; dx++, screen_x += x_sign) {
     if (dest[screen_x].IsFilled()) continue;
 
     u8 vram_entry = tile_line_base[dx >> 1];
@@ -228,14 +34,13 @@ static void Render4bpp(Pixel* dest, bool blend_top, bool blend_bottom, int start
   }
 }
 
-static void Render8bpp(Pixel* dest, bool blend_top, bool blend_bottom, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
-  int screen_x = start_x;
+static inline void Render8bpp(Pixel* dest, bool blend_top, bool blend_bottom, int start_x, const int x_sign, u8* tile_line_base, u8* palette_base) {
+  const int clamped_start = std::clamp(start_x, 0, frontend::GbaWidth);
+  const int clamped_end = std::clamp(start_x + 8 * x_sign, 0, frontend::GbaWidth);
+  const int dx_min  = x_sign * (clamped_start - start_x);
+  const int dx_max  = x_sign * (clamped_end   - start_x);
 
-  for (int dx = 0; dx < 8; dx++, screen_x += x_sign) {
-    if (screen_x < 0 || screen_x >= frontend::GbaWidth) {
-      if ((x_sign < 0) == (screen_x < 0)) return;
-      continue;
-    }
+  for (int dx = dx_min, screen_x = clamped_start; dx < dx_max; dx++, screen_x += x_sign) {
     if (dest[screen_x].IsFilled()) continue;
 
     u8 vram_entry = tile_line_base[dx];
@@ -247,7 +52,7 @@ static void Render8bpp(Pixel* dest, bool blend_top, bool blend_bottom, int start
   }
 }
 
-static void RenderRegularScanline(u32 bg, u32 scanline, Pixel* dest) {
+static inline void RenderRegularScanline(u32 bg, u32 scanline, Pixel* dest) {
   if (!(REG_DISPCNT & (0x0100 << bg))) {
     // disabled in dispcnt
     return;
@@ -321,7 +126,7 @@ static void RenderRegularScanline(u32 bg, u32 scanline, Pixel* dest) {
   }
 }
 
-static void SetAffinePixel(Pixel& pixel, const BGData& bg_data, u8 tile_id, u32 cbb, u8 dx, u8 dy) {
+static inline void SetAffinePixel(Pixel& pixel, const BGData& bg_data, u8 tile_id, u32 cbb, u8 dx, u8 dy) {
   u32 address = (cbb * 0x4000) | (tile_id * 0x40) | (dy * 8) | dx;
   u8 vram_entry = mem_vram[address];
 
@@ -330,7 +135,7 @@ static void SetAffinePixel(Pixel& pixel, const BGData& bg_data, u8 tile_id, u32 
   }
 }
 
-static void RenderAffineScanline(u32 bg, u32 scanline, Pixel* dest) {
+static inline void RenderAffineScanline(u32 bg, u32 scanline, Pixel* dest) {
   static constexpr u16 AffineSizeTable[] = { 128, 256, 512, 1024 };
 
   if (!(REG_DISPCNT & (0x0100 << bg))) {
@@ -374,14 +179,8 @@ static void RenderAffineScanline(u32 bg, u32 scanline, Pixel* dest) {
   }
 }
 
-static constexpr ObjSize ObjSizeTable[3][4] = {
-    { {8, 8},  {16, 16}, {32, 32}, {64, 64} },
-    { {16, 8}, {32, 8},  {32, 16}, {64, 32} },
-    { {8, 16}, {8, 32},  {16, 32}, {32, 64} }
-};
-
 static_assert(sizeof(struct OamData) == 8, "Incorrect OamData size for use");
-static void RenderRegularObject(const struct OamData& obj, u32 scanline, Pixel* dest, bool obj_1d_mapping) {
+static inline void RenderRegularObject(const struct OamData& obj, u32 scanline, Pixel* dest, bool obj_1d_mapping) {
   s32 start_x = (s32)(obj.x << 23) >> 23;
   auto size = ObjSizeTable[obj.shape][obj.size];
   s16 obj_y = obj.y;
@@ -437,7 +236,90 @@ static void RenderRegularObject(const struct OamData& obj, u32 scanline, Pixel* 
   }
 }
 
-static std::vector<struct OamData> GetObjects(u32 scanline) {
+static inline void SetAffineObjPixel(const struct OamData& obj, Pixel* dest, const ObjSize& size, u32 px, u32 py, bool obj_1d_mapping) {
+  // start of object vram
+  u32 pixel_address = 0x10000;
+  pixel_address += obj.tileNum * 0x20;
+  pixel_address += obj_1d_mapping ? (size.width * (py >> 3) * 4) : (32 * 0x20 * (py >> 3));
+
+  if (obj.bpp) {
+    // 8bpp
+    pixel_address += 8 * (py & 7);
+    pixel_address += 0x40 * (px >> 3);
+
+    u8 vram_entry = mem_vram[pixel_address + (px & 7)];
+    if (vram_entry) {
+      // todo: blend mode
+      dest->SetColor(((vu16*)mem_pltt)[0x100 + vram_entry], false, false);
+    }
+  }
+  else {
+    // 4bpp
+    pixel_address += 4 * (py & 7);
+    pixel_address += 0x20 * (px >> 3);
+
+    u8 palette_nibble = mem_vram[pixel_address + ((px & 7) >> 1)];
+    if (px & 1) {
+      palette_nibble >>= 4;
+    }
+    palette_nibble &= 0xf;
+
+    if (palette_nibble) {
+      // todo: blend mode
+      dest->SetColor(((vu16*)mem_pltt)[0x100 + obj.paletteNum * 0x10 + palette_nibble], false, false);
+    }
+  }
+}
+
+static inline void RenderAffineObject(const struct OamData& obj, u32 scanline, Pixel* dest, bool obj_1d_mapping) {
+  s32 start_x = (s32)(obj.x << 23) >> 23;
+  s16 obj_y = obj.y;
+  if (obj_y > frontend::GbaHeight) obj_y -= 0x100;
+
+  auto size = ObjSizeTable[obj.shape][obj.size];
+  s16 pa, pb, pc, pd;
+  pa = (s16)((struct OamData*)mem_oam)[4 * obj.matrixNum + 0].affineParam;
+  pb = (s16)((struct OamData*)mem_oam)[4 * obj.matrixNum + 1].affineParam;
+  pc = (s16)((struct OamData*)mem_oam)[4 * obj.matrixNum + 2].affineParam;
+  pd = (s16)((struct OamData*)mem_oam)[4 * obj.matrixNum + 3].affineParam;
+
+  u32 px0 = size.width >> 1;
+  u32 py0 = size.height >> 1;
+
+  s16 dx, dy;
+  u32 fictional_width;
+
+  if (obj.affineMode == 0b11) {
+    // double rendering
+    dx = -size.width;
+    dy = scanline - obj_y - size.height;
+    fictional_width = size.width << 1;
+  }
+  else {
+    dx = -size.width >> 1;
+    dy = scanline - obj_y - (size.height >> 1);
+    fictional_width = size.width;
+  }
+
+  const int ix_min = std::max(-start_x, 0);
+  const int ix_max = std::min<int>(start_x + fictional_width, frontend::GbaWidth) - start_x;
+  for (int ix = ix_min; ix < ix_max; ix++) {
+    if (dest[start_x + ix].IsFilled()) continue;
+
+    // todo: check window
+    // transform
+    u32 px = ((pa * (dx + ix) + pb * dy) >> 8) + px0;
+    u32 py = ((pc * (dx + ix) + pd * dy) >> 8) + py0;
+
+    // use actual width of sprite, even for double rendering
+    if (px >= size.width || py >= size.height) continue;
+
+    // todo: object window
+    SetAffineObjPixel(obj, &dest[start_x + ix], size, px, py, obj_1d_mapping);
+  }
+}
+
+static inline std::vector<struct OamData> GetObjects(u32 scanline) {
   const u16 dispcnt = REG_DISPCNT;
   if (!(dispcnt & DISPCNT_OBJ_ON)) {
     return {};
@@ -483,21 +365,21 @@ static std::vector<struct OamData> GetObjects(u32 scanline) {
   return result;
 }
 
-void RenderObject(const struct OamData& obj, u32 scanline, Pixel* dest, bool obj_1d_mapping) {
+static inline void RenderObject(const struct OamData& obj, u32 scanline, Pixel* dest, bool obj_1d_mapping) {
   switch (obj.affineMode) {
     case 0b00:
       RenderRegularObject(obj, scanline, dest, obj_1d_mapping);
       break;
     case 0b01:
       // affine
-      break;
     case 0b11:
       // affine double
+      RenderAffineObject(obj, scanline, dest, obj_1d_mapping);
       break;
   }
 }
 
-static void ComposeScanline(color_t* dest, Pixel* scanline) {
+static inline void ComposeScanline(color_t* dest, Pixel* scanline) {
   const u16 bldcnt = REG_BLDCNT;
   auto blend_mode = static_cast<BlendMode>((bldcnt >> 6) & 3);
   bool backdrop_top   = (bldcnt >> 5) & 1;
@@ -514,7 +396,7 @@ static void ComposeScanline(color_t* dest, Pixel* scanline) {
   }
 }
 
-static void RenderScanline(u32 scanline, color_t* dest) {
+void RenderScanline(u32 scanline, color_t* dest) {
   Pixel pixels[frontend::GbaWidth] = {};
 
   const u16 dispcnt = REG_DISPCNT;
@@ -599,14 +481,6 @@ static void RenderScanline(u32 scanline, color_t* dest) {
   }
 
   ComposeScanline(dest, pixels);
-}
-
-void RenderFrame(color_t* screen) {
-  // todo: check if gMain.HBlankCallback is set for one shot rendering
-  //       or if any DMA starts at HBlank
-  for (int i = 0; i < frontend::GbaHeight; i++) {
-    RenderScanline(i, screen + i * frontend::GbaWidth);
-  }
 }
 
 }
