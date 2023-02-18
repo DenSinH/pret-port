@@ -4,8 +4,18 @@ extern "C" {
 
 #include "gba/gba.h"
 
+// there are some fields named "template" in a struct,
+// doing this allows us to just include the header without altering it
+#include <string.h>
+#include <stdlib.h>
+#include <limits.h>
+#define template _template
+#include "main.h"
+#undef template
+
 typedef void (* IntrFunc)();
 extern IntrFunc gIntrTable[];
+extern struct Main gMain;
 
 }
 
@@ -46,5 +56,22 @@ void HandleInterrupt(Interrupt interrupt) {
     intrFunc();
   }
 }
+
+bool HasHBlankCallback() {
+  return gMain.hblankCallback != nullptr;
+}
+
+void DoHBlankCallback() {
+  gMain.hblankCallback();
+}
+
+bool HasVCountCallback() {
+  return gMain.vcountCallback != nullptr;
+}
+
+void DoVCountCallback() {
+  gMain.vcountCallback();
+}
+
 
 }
