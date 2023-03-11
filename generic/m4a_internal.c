@@ -825,7 +825,7 @@ void MPlayMain(struct MusicPlayerInfo * player) {
           goto nextTrack;
         }
 
-        currentTrack->lfoDelayC += currentTrack->lfoSpeed;
+        currentTrack->lfoSpeedC += currentTrack->lfoSpeed;
 
         s8 r;
         if (currentTrack->lfoSpeedC >= 0x40U && currentTrack->lfoSpeedC < 0xC0U) {
